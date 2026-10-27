@@ -1,3 +1,3 @@
-# Starwell SI
+# Starwell.bot
 
-Built website for Starwell SI (static output). Source is kept privately.
+Built website for Starwell.bot (static output). Source is kept privately.
