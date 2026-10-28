@@ -18,6 +18,7 @@ It runs as a [claude.ai artifact](https://claude.ai/artifact/8sr2RVsgg8pFsvVbBV4
 - **Traceable findings.** Every quote a finding relies on is checked against the source text. A missing quote is flagged, and the finding is downgraded to "Unknown". Findings are drafts until an Editor accepts, rejects or asks for evidence (enforced by the server).
 - **Ask Starwell.** A contextual assistant scoped to one memo or the whole company. Highlight text to get Ask · Explain · Owner impact. Answers are split into What this means / Why it matters / What may be missing / Next step, with each claim labeled reported, verified, hypothesis or unknown, and linked to its source passage. Retrieval is keyword-based (BM25) over the company's own transcripts only.
 - **Key numbers, Diagnostics (Investigate next / Ready to test), Actions (tasks), comments and an activity feed.**
+- **Look and feel.** Figtree variable font with tight tracking, a black pill top bar, white and #f2f2f2 surfaces, one cyan accent (#38c6ec), and a cyan band with a card on it for the sign-in screen and company overview. Light and dark themes.
 
 ## Repository layout
 

@@ -57,7 +57,8 @@ function rankFindings(list) {
   return list.filter((f) => reviewOf(f.id) !== "rejected").sort((a, b) => (IMPORTANCE[a.importance] ?? 3) - (IMPORTANCE[b.importance] ?? 3) || (rv[reviewOf(a.id)] ?? 3) - (rv[reviewOf(b.id)] ?? 3) || b.createdAt - a.createdAt);
 }
 function viewOverview(view) {
-  view.className = "view wide";
+  view.className = "view wide enter";
+  setTimeout(() => view.classList.remove("enter"), 2400);
   let editing = false;
   const draw = async () => {
     const c = company(); if (!c) return;
@@ -71,23 +72,28 @@ function viewOverview(view) {
     const sugg = ms.find((m) => m.profileSuggestion && Object.entries(m.profileSuggestion).some(([k, v]) => str(v) && !str(P[k])));
     const processing = ms.filter((m) => m.status === "analyzing" && !isStale(m));
     const nextTask = tasks[0];
+    const goFinding = (f) => (e) => { e.preventDefault(); S.focusFinding = f.id; location.hash = "#c-" + c.id + "-diagnostics"; render(true); };
     view.replaceChildren(
-      h("div", { class: "page-h" }, h("div", null,
+      h("div", { class: "page-h ov-head" }, h("div", null,
         h("div", { class: "crumb" }, "Company overview"),
         h("h1", null, c.name),
-        h("p", null, [c.industry, P.size_and_team, P.locations].filter(str).join(" · ") || "Profile not filled in yet.")),
-        S.can.write ? h("a", { class: "btn primary", href: "#new" }, svg(IC.plus), "New memo") : null),
+        h("p", null, [c.industry, P.size_and_team, P.locations].filter(str).join(" · ") || "Profile not filled in yet."))),
+      // the cyan band with the priorities card sitting on it
+      ms.length ? [h("div", { class: "band ov-band", role: "presentation" }),
+        h("section", { class: "band-card", "aria-label": "What matters most" },
+          h("div", { class: "bc-eyebrow" }, `# ${c.name} / ${ms.length} memo${ms.length === 1 ? "" : "s"} · ${fs.length} finding${fs.length === 1 ? "" : "s"}`),
+          h("div", { class: "bc-title" }, "What matters most"),
+          h("div", { class: "bc-panel" }, h("h3", null, top.length ? "Top priorities" : "No findings yet"),
+            top.length ? top.map((f) => h("a", { class: "brow", href: "#c-" + c.id + "-diagnostics", onclick: goFinding(f) }, statusIcon(reviewOf(f.id)),
+              h("div", { style: "min-width:0" }, h("b", null, f.title), h("small", null, f.nextAction ? "Next: " + f.nextAction : f.ownerImplication)),
+              h("span", { class: "chip " + (EVID[f.evidenceStatus]?.[1] || "c-line") }, EVID[f.evidenceStatus]?.[0] || "Reported")))
+              : h("p", { style: "font-size:14px;color:#6b6b6b;padding:4px 0 6px" }, "They appear here after a memo is analyzed. Ranked by business importance, then review status; evidence strength is shown on each."),
+            fs.length > 3 ? h("a", { class: "btn ghost sm", href: "#c-" + c.id + "-diagnostics", style: "margin-top:8px;color:#000" }, `All ${fs.length} findings →`) : null))] : null,
       processing.length ? h("div", { class: "notice info", style: "margin-bottom:18px" }, h("span", null, `${processing.length} memo${processing.length > 1 ? "s are" : " is"} being analyzed. Findings appear here when ready.`), h("a", { class: "btn sm", href: "#m-" + processing[0].id }, "Watch progress")) : null,
       !ms.length ? h("div", { class: "empty" }, h("h3", null, "No memos for " + c.name + " yet"), h("p", null, "Upload a voice memo, a document or a pasted transcript. Starwell organizes it, annotates it and drafts findings with links to the exact passages."), S.can.write ? h("a", { class: "btn primary", href: "#new" }, "Add the first memo") : null) : null,
-      ms.length ? h("div", { class: "cols" },
+      ms.length ? h("div", { class: "cols", style: "margin-top:34px" },
         h("div", null,
-          h("section", { class: "sec", style: "margin-top:0" }, h("h2", null, "What matters most"), h("p", { class: "lede" }, top.length ? "The top priorities across this company's memos, ranked by business importance, then review status. Evidence strength is shown separately." : "No findings yet. They appear after a memo is analyzed."),
-            top.length ? h("div", { class: "card", style: "padding:4px 18px" }, top.map((f, i) => h("div", { class: "prio" }, h("span", { class: "n" }, String(i + 1).padStart(2, "0")), h("div", { style: "min-width:0" },
-              h("h3", null, f.title), h("p", null, f.ownerImplication),
-              h("div", { class: "row-meta" }, chipOf(KIND, f.kind), chipOf(EVID, f.evidenceStatus), reviewChip(f), arr(f.evidence)[0] ? evLink(f.memoId, f.evidence[0].ref) : null),
-              f.nextAction ? h("p", { style: "margin-top:8px;color:var(--ink);font-size:14px" }, h("b", null, "Next: "), f.nextAction) : null)))) : null,
-            fs.length > 3 ? h("a", { class: "btn ghost sm", href: "#c-" + c.id + "-diagnostics", style: "margin-top:8px" }, `All ${fs.length} findings →`) : null),
-          h("section", { class: "sec" }, h("h2", null, "What's still unknown"), h("p", { class: "lede" }, "Open questions and missing evidence from the memos. These are coverage gaps, not confirmed problems."),
+          h("section", { class: "sec", style: "margin-top:0" }, h("h2", null, "What's still unknown"), h("p", { class: "lede" }, "Open questions and missing evidence from the memos. These are coverage gaps, not confirmed problems."),
             gaps.length ? h("ul", { class: "gaps" }, gaps.map((g) => h("li", null, g))) : h("p", { class: "muted" }, "None recorded yet.")),
           h("section", { class: "sec" }, h("h2", null, "Next recommended action"),
             nextTask ? h("div", { class: "card" }, h("b", null, nextTask.title), h("div", { class: "row-meta" }, nextTask.assigneeId ? "Assigned to " + (ps[nextTask.assigneeId]?.name || "a teammate") : "Unassigned", nextTask.due ? "Due " + fmtDate(nextTask.due) : null, h("a", { href: "#c-" + c.id + "-actions" }, "Open actions")))
@@ -163,6 +169,16 @@ function viewUnassigned(view) {
 // =====================================================================================
 // ReviewStatus + DiagnosticCard
 // =====================================================================================
+// Small status circles, as in the reference rows: accepted ✓, needs evidence ?, rejected ×, draft ○.
+function statusIcon(st) {
+  const d = {
+    accepted: '<circle cx="7" cy="7" r="7" fill="#2a9a30"/><path d="M4.1 7.15 6.05 9.05 9.9 5.2" stroke="#fff" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
+    needs_evidence: '<circle cx="7" cy="7" r="7" fill="#f6a825"/><path d="M5.35 5.5a1.7 1.7 0 1 1 2.45 1.52c-.52.26-.83.63-.83 1.2v.3" stroke="#fff" stroke-width="1.25" fill="none" stroke-linecap="round"/><circle cx="6.97" cy="10.05" r=".78" fill="#fff"/>',
+    rejected: '<circle cx="7" cy="7" r="7" fill="#b8b8b8"/><path d="m4.9 4.9 4.2 4.2m0-4.2-4.2 4.2" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/>',
+    draft: '<circle cx="7" cy="7" r="6.2" fill="none" stroke="#b8b8b8" stroke-width="1.4" stroke-dasharray="2.2 1.8"/>',
+  }[st] || "";
+  return h("span", { class: "stat-ic", role: "img", "aria-label": REVIEW[st]?.[0] || "Draft", html: `<svg width="16" height="16" viewBox="0 0 14 14">${d}</svg>` });
+}
 function reviewChip(f) {
   const r = S.reviews[f.id], st = reviewOf(f.id);
   const c = chipOf(REVIEW, st);
@@ -189,7 +205,7 @@ function DiagnosticCard(f, opts = {}) {
   const open = openCards.has(f.id);
   const st = reviewOf(f.id);
   const head = h("button", { class: "dhead", type: "button", "aria-expanded": String(open), onclick: () => { if (openCards.has(f.id)) openCards.delete(f.id); else openCards.add(f.id); el.replaceWith(DiagnosticCard(f, opts)); } },
-    h("div", { class: "dtop" }, chipOf(KIND, f.kind), chipOf(EVID, f.evidenceStatus), reviewChip(f), f.importance ? h("span", { class: "chip c-line" }, "Importance: " + f.importance) : null, f.origin === "assistant" ? h("span", { class: "chip c-line" }, "From Ask Starwell") : null),
+    h("div", { class: "dtop" }, statusIcon(st), chipOf(KIND, f.kind), chipOf(EVID, f.evidenceStatus), reviewChip(f), f.importance ? h("span", { class: "chip c-line" }, "Importance: " + f.importance) : null, f.origin === "assistant" ? h("span", { class: "chip c-line" }, "From Ask Starwell") : null),
     h("h3", null, f.title),
     f.ownerImplication ? h("p", { class: "impl" }, f.ownerImplication) : null,
     f.priorityReason ? h("p", { class: "why" }, "Why it's ranked here: " + f.priorityReason) : null,

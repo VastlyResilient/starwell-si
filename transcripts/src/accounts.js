@@ -21,24 +21,31 @@ async function unclaimSeat(uid) {
   try { await S.db.doc("team/" + uid).delete(); } catch { toast("Only that person or the page owner can unlink this account."); }
 }
 function viewSignIn(view) {
-  view.className = "view";
+  view.className = "view wide enter";
+  setTimeout(() => view.classList.remove("enter"), 2400);
   const draw = async () => {
     const holders = Object.keys(S.team);
     const ps = await (S.user ? S.user.profiles(holders).catch(() => ({})) : {});
-    const err = h("p", { class: "err", hidden: true, role: "alert" });
-    view.replaceChildren(h("div", { class: "signin" },
-      h("div", { class: "wordmark", style: "padding:0 0 18px" }, h("b", null, "Starwell"), h("span", null, "SI · Transcripts")),
-      h("h1", null, "Who's signing in?"),
-      h("p", { class: "muted", style: "margin-top:6px" }, "Pick your name once. It's linked to the Claude account you're signed in with, so your memos and notes are labeled as yours for the whole team."),
-      h("div", { class: "seats" }, roster().map((name) => {
-        const holder = holderOf(name);
-        const taken = holder && holder !== S.uid;
-        return h("button", { class: "seat", type: "button", disabled: !!taken, onclick: () => claimSeat(name, err) },
-          h("span", { class: "mono-badge seat-badge" }, initials(name)),
-          h("span", { style: "min-width:0" }, h("b", null, name), h("small", null, taken ? "Already signed in on " + (ps[holder]?.name || "another account") : "Not signed in yet")));
-      })),
-      err,
-      h("p", { class: "hint", style: "margin-top:18px" }, "Signed in to Claude as ", h("b", { style: "color:var(--ink);font-weight:600" }, S.me?.name || "this account"), ". Not you? Sign out of Claude and sign back in with your own account, then open this link again.")));
+    const err = h("p", { class: "err", hidden: true, role: "alert", style: "padding:6px 4px 0" });
+    view.replaceChildren(h("div", { class: "hero" },
+      h("nav", { class: "hero-nav", "aria-label": "Starwell" }, h("span", { class: "wordmark" }, h("b", null, "Starwell", h("sup", null, "SI"))),
+        h("span", { class: "hero-who" }, "Claude account: ", h("b", null, S.me?.name || "this account"))),
+      h("h1", null, "Every interview, organized\ninto clear, useful insight"),
+      h("p", null, "Voice memos and notes become findings linked to the exact words.\nPick your name to get started."),
+      h("div", { class: "band hero-band", role: "presentation" }),
+      h("section", { class: "band-card", "aria-label": "Sign in" },
+        h("div", { class: "bc-eyebrow" }, "# Starwell SI / Team sign-in"),
+        h("div", { class: "bc-title" }, "Who's signing in?"),
+        h("div", { class: "bc-panel" }, h("h3", null, "Choose your name"),
+          roster().map((name) => {
+            const holder = holderOf(name);
+            const taken = holder && holder !== S.uid;
+            return h("button", { class: "brow seat seat-row", type: "button", disabled: !!taken, onclick: () => claimSeat(name, err) },
+              h("span", { class: "av", "aria-hidden": "true" }, initials(name)),
+              h("span", { style: "min-width:0" }, h("b", null, name), h("small", null, taken ? "Already signed in on " + (ps[holder]?.name || "another account") : "Links to the Claude account you're using now")),
+              taken ? statusIcon("accepted") : h("span", { class: "go" }, "Sign in →"));
+          }), err),
+        h("p", { style: "font-size:12.5px;color:#6b6b6b;margin:10px 4px 2px;letter-spacing:-0.01em" }, "Not you? Sign out of Claude, sign back in with your own account, then open this link again."))));
   };
   currentView.refresh = draw; draw();
 }
