@@ -1,0 +1,10 @@
+I|Thanks for making time today, Dana. To start, can you tell me what Harbor Line Plumbing does?
+O|Sure. We are a residential and light commercial plumbing company in Tampa. We have been in business for eleven years. We do repairs, water heater installs, and repiping. Right now we have fourteen technicians and three people in the office.
+I|How do customers usually find you and book a job?
+O|Mostly phone calls. About seventy percent of our work comes from calls, and the rest comes from our website form and Google. The problem is that our office misses a lot of calls during the morning rush. I would guess we miss around twenty calls a week, and every missed call is probably a four hundred dollar job.
+I|What happens after a job is booked?
+O|Our dispatcher, Maria, builds the schedule on a whiteboard and then texts each tech. It works, but if one job runs long, the whole day falls apart and she has to call everyone. Quotes are another headache. Techs write quotes on paper, and it can take two or three days before the customer gets a clean estimate. We lose jobs because of that delay.
+I|If you could fix one thing in the next ninety days, what would it be?
+O|Honestly, the missed calls and the slow quotes. I want customers to get a quote the same day. We also use QuickBooks for invoicing, but nothing talks to each other, so Maria enters everything twice.
+I|That is really helpful. As a next step, I will send over a proposal by Friday, and could you share your call logs from last month?
+O|Yes, I will have Maria pull the call logs and send them to you by Wednesday.
