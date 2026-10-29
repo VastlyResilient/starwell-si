@@ -1,0 +1,12 @@
+{
+  "name": "starwell-si-transcripts",
+  "private": true,
+  "description": "Starwell SI interview workspace (claude.ai artifact)",
+  "scripts": {
+    "build": "./build.sh",
+    "test": "node test/e2e.test.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.48.0"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "url": "https://claude.ai/artifact/8sr2RVsgg8pFsvVbBV42hm",
+  "title": "Starwell SI Transcripts",
+  "entry": "app/index.html",
+  "capabilities": {
+    "db": {
+      "rules": [
+        { "path": "reviews", "read": "view", "write": "admin" },
+        { "path": "team", "read": "view", "write": "owner" },
+        { "path": "team/{self}", "write": "interact" },
+        { "path": "settings", "read": "view", "write": "admin" }
+      ]
+    },
+    "user": { "scopes": ["profile"] },
+    "sample": { "images": true },
+    "downloads": true
+  }
+}

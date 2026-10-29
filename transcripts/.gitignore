@@ -1,0 +1,5 @@
+node_modules/
+test/shots/
+test/state*.json
+.DS_Store
+test/shots2/

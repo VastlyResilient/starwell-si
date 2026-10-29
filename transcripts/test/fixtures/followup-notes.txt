@@ -1,0 +1,4 @@
+Follow-up thoughts after the Harbor Line call:
+- Dana seemed very motivated, said "we can't keep running the day off a whiteboard"
+- Maria (dispatcher) is the single point of failure for scheduling
+- Ask about after-hours call handling, didn't get to it
