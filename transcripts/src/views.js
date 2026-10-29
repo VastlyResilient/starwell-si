@@ -84,56 +84,65 @@ function viewOverview(view) {
   const alive = liveCheck();
   const draw = async () => {
     const c = company(); if (!c) return;
-    const ms = companyMemos(), all = companyFindings(), live = rankFindings(all), top = dedupeFindings(live);
-    const tasks = S.tasks.filter((t) => t.companyId === c.id), open = tasks.filter((t) => !t.done);
+    const ms = companyMemos(), live = rankFindings(companyFindings()), top = dedupeFindings(live);
+    const open = S.tasks.filter((t) => t.companyId === c.id && !t.done);
     const today = new Date().toISOString().slice(0, 10), late = open.filter((t) => t.due && t.due < today);
-    const toReview = live.filter((f) => reviewOf(f.id) === "draft").length, accepted = live.filter((f) => reviewOf(f.id) === "accepted").length;
-    const nums = metricRows(c.id), unnumbered = new Set(S.metrics.filter((x) => x.companyId === c.id && !str(x.value)).map((x) => norm(x.label))).size;
-    const gaps = [...new Set([...ms.flatMap((m) => arr(m.openQuestions)), ...live.flatMap((f) => arr(f.missing))].map(str).filter(Boolean))].slice(0, 6);
-    const evs = S.events.filter((e) => e.companyId === c.id).slice(0, 8);
-    const ps = await people([...evs.map((e) => e.by), ...open.map((t) => t.assigneeId)]);
+    const toReview = top.filter((f) => reviewOf(f.id) === "draft").length;
+    const gaps = [...new Set([...ms.flatMap((m) => arr(m.openQuestions)), ...live.flatMap((f) => arr(f.missing))].map(str).filter(Boolean))];
+    const ps = await people(open.map((t) => t.assigneeId));
     if (!alive()) return;
     const P = { ...(c.profile || {}) }; if (!str(P.industry)) P.industry = c.industry || "";
-    const filled = PROFILE_FIELDS.filter(([k]) => str(P[k]));
     const sugg = ms.find((m) => m.profileSuggestion && Object.entries(m.profileSuggestion).some(([k, v]) => str(v) && !str(P[k])));
     const processing = ms.filter((m) => m.status === "analyzing" && !isStale(m));
-    const nextTask = open.sort((a, b) => (a.due || "9") < (b.due || "9") ? -1 : 1)[0];
+    const nextTask = [...open].sort((a, b) => (a.due || "9") < (b.due || "9") ? -1 : 1)[0];
     const goFinding = (f) => (e) => { e.preventDefault(); S.focusFinding = f.id; location.hash = "#c-" + c.id + "-diagnostics"; render(true); };
     const href = (p) => "#c-" + c.id + "-" + p;
-    const kpi = (label, icon, value, foot, to) => h("a", { class: "kpi", href: to }, h("span", { class: "k" }, svg(icon, 14), label), h("span", { class: "v" }, value), h("span", { class: "f" }, foot));
+    const kpi = (label, value, foot, to) => h("a", { class: "kpi", href: to }, h("span", { class: "k" }, label), h("span", { class: "v" }, value), foot ? h("span", { class: "f" }, foot) : null);
     const sub = [c.industry || P.industry, P.size_and_team, P.locations].map(str).filter(Boolean).join(" · ");
     view.replaceChildren(
       h("div", { class: "ov-h" }, h("span", { class: "co-av lg", "aria-hidden": "true" }, initials(c.name)),
-        h("div", { class: "page-h", style: "margin:0;flex:1" }, h("div", null, h("h1", null, c.name), h("p", null, sub || "No company profile yet", ms.length ? " · " + plural(ms.length, "memo") + (ms[0] ? ", latest " + fmtShort(ms[0].createdAt) : "") : "")))),
-      processing.length ? h("div", { class: "notice info", style: "margin-bottom:16px" }, h("span", { class: "spin", style: "color:var(--info)" }), h("span", null, `${plural(processing.length, "memo is", "memos are")} being analyzed. Findings appear here when ready.`), h("a", { class: "btn sm", href: "#m-" + processing[0].id }, "View progress")) : null,
-      !ms.length ? emptyState(IC.mic, "No memos for " + c.name + " yet", "Upload a voice memo, a document or a pasted transcript. Starwell organizes it, annotates it and drafts findings that link to the exact passages.", S.can.write ? h("a", { class: "btn primary", href: "#new" }, svg(IC.plus), "Upload the first memo") : null) : [
+        h("div", { class: "page-h", style: "margin:0;flex:1 1 240px" }, h("div", null, h("h1", null, c.name), sub ? h("p", null, sub) : null)),
+        h("div", { class: "acts" }, h("button", { class: "btn ghost sm", type: "button", onclick: () => profileDialog(c) }, "Profile", sugg && S.can.write ? h("i", { class: "dot", style: "--nc:var(--brand-deep)", title: "A memo mentions details that aren't in the profile yet" }) : null),
+          h("button", { class: "btn ghost sm", type: "button", onclick: () => activityDialog(c) }, "Activity"))),
+      processing.length ? h("a", { class: "notice info", href: "#m-" + processing[0].id, style: "margin-bottom:16px" }, h("span", { class: "spin", style: "color:var(--info)" }), h("span", null, "Analyzing " + plural(processing.length, "memo") + "…"), svg(IC.chevR)) : null,
+      !ms.length ? emptyState(IC.mic, "No memos yet", "Upload a voice memo, notes or a transcript from an interview with " + c.name + ".", S.can.write ? h("a", { class: "btn primary", href: "#new" }, svg(IC.plus), "Upload a memo") : null) : [
         h("div", { class: "kpis" },
-          kpi("Findings", IC.diag, top.length, live.length ? [h("b", null, toReview), " to review · ", accepted + " accepted"] : "None yet", href("diagnostics")),
-          kpi("Open tasks", IC.actions, open.length, late.length ? h("b", { style: "color:var(--bad)" }, late.length + " overdue") : tasks.length ? (tasks.length - open.length) + " done" : "None yet", href("actions")),
-          kpi("Key numbers", IC.metrics, nums.length, unnumbered ? unnumbered + " mentioned without a figure" : nums.length ? "Mostly said out loud" : "None yet", href("metrics")),
-          kpi("Memos", IC.memos, ms.length, processing.length ? processing.length + " analyzing" : "Latest " + fmtShort(ms[0].recordedDate || ms[0].createdAt), href("memos"))),
+          kpi("Findings", top.length, toReview ? toReview + " to review" : null, href("diagnostics")),
+          kpi("Open tasks", open.length, late.length ? h("b", { style: "color:var(--bad)" }, late.length + " overdue") : null, href("actions")),
+          kpi("Key numbers", metricRows(c.id).length, null, href("metrics")),
+          kpi("Memos", ms.length, processing.length ? processing.length + " analyzing" : null, href("memos"))),
         h("div", { class: "ov-grid" },
-          h("div", { class: "ov-col" },
-            h("section", { class: "card", "aria-labelledby": "ov-top" }, h("div", { class: "card-h" }, h("h2", { id: "ov-top" }, "Top priorities"), top.length > 5 ? h("a", { class: "textlink", href: href("diagnostics"), style: "font-size:13px" }, "All " + top.length) : null),
-              top.length ? h("div", null, top.slice(0, 5).map((f) => h("a", { class: "prio-row", href: href("diagnostics"), onclick: goFinding(f) }, statusIcon(reviewOf(f.id)),
-                h("div", { style: "min-width:0" }, h("b", null, f.title), h("small", null, f.nextAction ? "Next: " + f.nextAction : f.ownerImplication)),
-                h("div", { class: "end" }, prioTag(f.importance), memoCountOf(f) > 1 ? h("span", { class: "hint" }, memoCountOf(f) + " memos") : null))))
-                : h("div", { class: "empty flat" }, h("p", null, "Findings appear here after a memo is analyzed, ranked by business importance."))),
-            h("section", { class: "card", "aria-labelledby": "ov-gaps" }, h("div", { class: "card-h" }, h("h2", { id: "ov-gaps" }, "Still unknown"), h("span", { class: "hint" }, "Gaps to cover next time, not confirmed problems")),
-              gaps.length ? h("ul", { class: "gaps" }, gaps.map((g) => h("li", null, g))) : h("div", { class: "empty flat" }, h("p", null, "No open questions recorded yet.")))),
+          h("section", { class: "card", "aria-labelledby": "ov-top" }, h("div", { class: "card-h" }, h("h2", { id: "ov-top" }, "Top priorities"), top.length > 5 ? h("a", { class: "textlink", href: href("diagnostics"), style: "font-size:13px" }, "View all " + top.length) : null),
+            top.length ? h("div", null, top.slice(0, 5).map((f) => h("a", { class: "prio-row", href: href("diagnostics"), onclick: goFinding(f) }, statusIcon(reviewOf(f.id)),
+              h("div", { style: "min-width:0" }, h("b", null, f.title), f.nextAction ? h("small", null, "Next: " + f.nextAction) : null),
+              h("div", { class: "end" }, prioTag(f.importance)))))
+              : h("div", { class: "empty flat" }, h("p", null, "Findings appear here once a memo is analyzed."))),
           h("div", { class: "ov-col" },
             h("section", { class: "card next-card", "aria-labelledby": "ov-next" }, h("div", { class: "card-h" }, h("h2", { id: "ov-next" }, "Next step")),
-              h("div", { class: "card-b" }, nextTask ? [h("p", null, nextTask.title), h("small", null, [nextTask.assigneeId ? (ps[nextTask.assigneeId]?.name || "Teammate") : "Unassigned", nextTask.due ? "due " + fmtShort(nextTask.due) : null].filter(Boolean).join(" · ")), h("a", { class: "btn sm", href: href("actions") }, "Open tasks")]
-                : top[0]?.nextAction ? [h("p", null, top[0].nextAction), h("small", null, "Suggested by: " + top[0].title), S.can.write ? h("button", { class: "btn sm", type: "button", onclick: () => createTask({ title: top[0].nextAction, findingId: top[0].id, memoId: top[0].memoId, companyId: c.id }) }, svg(IC.plus), "Create task") : null]
+              h("div", { class: "card-b" }, nextTask ? [h("p", null, nextTask.title), h("small", null, [nextTask.assigneeId ? (ps[nextTask.assigneeId]?.name || "Teammate") : null, nextTask.due ? "due " + fmtShort(nextTask.due) : null].filter(Boolean).join(" · ")), h("a", { class: "btn sm", href: href("actions") }, "Open tasks")]
+                : top[0]?.nextAction ? [h("p", null, top[0].nextAction), S.can.write ? h("button", { class: "btn sm", type: "button", onclick: () => createTask({ title: top[0].nextAction, findingId: top[0].id, memoId: top[0].memoId, companyId: c.id }) }, svg(IC.plus), "Make it a task") : null]
                 : h("p", { class: "muted", style: "font-weight:400" }, "Nothing yet."))),
-            h("section", { class: "card", "aria-labelledby": "ov-prof" }, h("div", { class: "card-h" }, h("h2", { id: "ov-prof" }, "Company profile"), S.can.write ? h("button", { class: "btn ghost sm", type: "button", onclick: () => openDialog("Company profile", (close) => profileForm(c, close), { wide: true }) }, "Edit") : null),
-              h("div", { class: "card-b", style: "padding-top:8px;padding-bottom:8px" }, filled.length ? h("dl", { class: "profile" }, filled.slice(0, 6).map(([k, l]) => [h("dt", null, l), h("dd", null, str(P[k]))])) : h("p", { class: "muted", style: "font-size:13px;padding:6px 0" }, "Nothing recorded yet."),
-                filled.length > 6 ? h("button", { class: "linkish", type: "button", style: "font-size:13px;margin-top:6px", onclick: () => openDialog("Company profile", h("dl", { class: "profile" }, filled.map(([k, l]) => [h("dt", null, l), h("dd", null, str(P[k]))])), { wide: true }) }, "Show all " + filled.length + " fields") : null),
-              sugg && S.can.write ? h("div", { class: "card-f" }, h("div", { class: "row", style: "flex-wrap:wrap" }, h("span", { class: "hint", style: "flex:1 1 180px" }, "“" + sugg.title + "” mentions details that aren't in the profile yet."), h("button", { class: "btn sm", type: "button", onclick: () => applyProfile(c, sugg) }, "Apply"))) : null),
-            h("section", { class: "card", "aria-labelledby": "ov-act" }, h("div", { class: "card-h" }, h("h2", { id: "ov-act" }, "Activity")),
-              evs.length ? h("ul", { class: "feed" }, evs.map((e) => h("li", null, avatar(ps[e.by], ps[e.by]?.name, "xs"), h("div", null, h("b", null, ps[e.by]?.name || "Someone"), " " + e.text, h("small", null, fmtWhen(e.at)))))) : h("div", { class: "empty flat" }, h("p", null, "No activity yet."))))) ]);
+            gaps.length ? h("section", { class: "card", "aria-labelledby": "ov-gaps" }, h("div", { class: "card-h" }, h("h2", { id: "ov-gaps" }, "Still unknown"), gaps.length > 4 ? h("button", { class: "linkish", type: "button", style: "font-size:13px", onclick: () => openDialog("Still unknown", h("ul", { class: "gaps" }, gaps.map((g) => h("li", null, g)))) }, "All " + gaps.length) : null),
+              h("ul", { class: "gaps" }, gaps.slice(0, 4).map((g) => h("li", null, g)))) : null))]);
   };
   currentView.refresh = draw; draw();
+}
+function profileDialog(c) {
+  openDialog("Company profile", (close) => {
+    const P = { ...(c.profile || {}) }; if (!str(P.industry)) P.industry = c.industry || "";
+    const filled = PROFILE_FIELDS.filter(([k]) => str(P[k]));
+    const sugg = companyMemos(c.id).find((m) => m.profileSuggestion && Object.entries(m.profileSuggestion).some(([k, v]) => str(v) && !str(P[k])));
+    const body = h("div");
+    body.append(filled.length ? h("dl", { class: "profile" }, filled.map(([k, l]) => [h("dt", null, l), h("dd", null, str(P[k]))])) : h("p", null, "Nothing recorded yet."),
+      sugg && S.can.write ? h("div", { class: "notice info", style: "margin-top:14px" }, h("span", null, "“" + sugg.title + "” mentions details that aren't in the profile yet."), h("button", { class: "btn sm", type: "button", onclick: async () => { await applyProfile(c, sugg); close(); } }, "Add them")) : null,
+      h("div", { class: "dlg-foot" }, S.can.write ? h("button", { class: "btn", type: "button", onclick: () => body.replaceChildren(profileForm(c, close)) }, svg(IC.edit), "Edit") : null, h("button", { class: "btn primary", type: "button", onclick: close }, "Done")));
+    return body;
+  }, { wide: true });
+}
+async function activityDialog(c) {
+  const evs = S.events.filter((e) => e.companyId === c.id).slice(0, 40);
+  const ps = await people(evs.map((e) => e.by));
+  openDialog("Activity", evs.length ? h("ul", { class: "feed" }, evs.map((e) => h("li", null, avatar(ps[e.by], ps[e.by]?.name, "xs"), h("div", null, h("b", null, ps[e.by]?.name || "Someone"), " " + e.text, h("small", null, fmtWhen(e.at)))))) : h("p", null, "No activity yet."));
 }
 const PROFILE_FIELDS = [["what_they_do", "What they do"], ["industry", "Industry"], ["size_and_team", "Size and team"], ["locations", "Service area"], ["offerings", "Services"], ["customers", "Customers"], ["business_model", "Business model"], ["tools_and_systems", "Software and tools"], ["goals", "Current goals"], ["constraints", "Known constraints"]];
 function profileForm(c, done) {
@@ -180,7 +189,7 @@ function viewMemos(view) {
     const ms = uploaderFilter ? all.filter((m) => m.ownerId === uploaderFilter) : all;
     const ps = await people(all.map((m) => m.ownerId));
     if (!alive()) return;
-    view.replaceChildren(pageHead("Memos", plural(all.length, "memo") + " for " + c.name + ". Each keeps its original wording beside the organized version.", S.can.write ? h("a", { class: "btn primary", href: "#new" }, svg(IC.plus), "New memo") : null),
+    view.replaceChildren(pageHead("Memos", null, S.can.write ? h("a", { class: "btn primary", href: "#new" }, svg(IC.plus), "New memo") : null),
       ups.length > 1 ? h("div", { class: "toolbar" }, h("div", { class: "seg uploader", role: "group", "aria-label": "Uploaded by" }, [["", "Everyone"], ...ups.map((u) => [u, ps[u]?.name || "Teammate"])].map(([u, l]) => h("button", { type: "button", "aria-pressed": String(uploaderFilter === u), onclick: () => { uploaderFilter = u; draw(); } }, l, h("span", { class: "n" }, u ? all.filter((m) => m.ownerId === u).length : all.length))))) : null,
       unassignedMemos().length ? h("div", { class: "notice", style: "margin-bottom:16px" }, svg(IC.inbox), h("span", null, plural(unassignedMemos().length, "memo") + " aren't linked to any company yet."), h("a", { class: "btn sm", href: "#unassigned" }, "Review")) : null,
       ms.length ? memoTable(ms, ps) : emptyState(IC.memos, "No memos yet", "Upload a voice memo, notes or a transcript from an interview.", S.can.write ? h("a", { class: "btn primary", href: "#new" }, svg(IC.plus), "New memo") : null));
@@ -234,33 +243,35 @@ function DiagnosticCard(f, opts = {}) {
   const st = reviewOf(f.id);
   const ev = arr(f.evidence);
   const head = h("button", { class: "dhead", type: "button", "aria-expanded": String(open), onclick: () => { if (openCards.has(f.id)) openCards.delete(f.id); else openCards.add(f.id); el.replaceWith(DiagnosticCard(f, opts)); } },
-    h("div", { class: "dtop" }, reviewTag(f), kindTag(f.kind), h("span", { class: "ev-s" + (EVID[f.evidenceStatus]?.[1] ? " weak" : "") }, EVID[f.evidenceStatus]?.[0] || "Reported"),
-      !ev.length ? h("span", { class: "ev-s weak" }, "No linked quote") : h("span", { class: "ev-s" }, plural(ev.length, "quote")),
-      f.origin === "assistant" ? h("span", { class: "badge outline" }, "From Ask Starwell") : null,
-      opts.similar ? h("span", { class: "badge outline", title: "Another finding has the same title" }, "Similar to another finding") : null,
-      h("span", { class: "grow" }), prioTag(f.importance)),
-    h("h3", null, f.title),
-    f.ownerImplication ? h("p", { class: "impl" }, f.ownerImplication) : null,
-    f.nextAction ? h("p", { class: "next" }, h("b", null, "Next: "), f.nextAction) : null);
+    h("div", { class: "dh" }, statusIcon(st),
+      h("div", { class: "dh-main" }, h("h3", null, f.title), f.ownerImplication ? h("p", { class: "impl" }, f.ownerImplication) : null,
+        // only what needs attention gets a label: a review decision, weak evidence, a missing quote, a likely duplicate
+        (() => { const flags = [st !== "draft" ? h("span", { class: "rv" }, REVIEW[st][0]) : null, EVID[f.evidenceStatus]?.[1] ? h("span", { class: "ev-s weak" }, EVID[f.evidenceStatus][0] + " evidence") : null,
+          !ev.length ? h("span", { class: "ev-s weak" }, "No linked quote") : null, f.origin === "assistant" ? h("span", { class: "ev-s" }, "From Ask Starwell") : null, opts.similar ? h("span", { class: "ev-s" }, "Possible duplicate") : null].filter(Boolean);
+          return flags.length ? h("div", { class: "dtop" }, flags) : null; })()),
+      h("div", { class: "dh-end" }, kindTag(f.kind), prioTag(f.importance))));
   el.append(head);
   if (!open) return el;
   const main = h("div", { class: "dmain" });
+  if (f.nextAction) main.append(h("p", { class: "next" }, h("b", null, "Next: "), f.nextAction));
   main.append(h("h4", null, "Supporting quotes"), ev.length ? ev.map((e) => h("div", { class: "evq" }, "“" + str(e.quote) + "”",
     h("footer", null, evLink(e.memoId || f.memoId, e.ref), e.check === "exact" ? h("span", { class: "badge ok" }, "Exact quote") : e.check === "paraphrase" ? h("span", { class: "badge warn" }, "Paraphrase") : e.check ? h("span", { class: "badge bad" }, "Not found in source") : null,
       memo(e.memoId || f.memoId) && (e.memoId || f.memoId) !== opts.memoId ? h("span", null, memo(e.memoId || f.memoId).title) : null))) : h("div", { class: "notice warn" }, h("span", null, "No passage is linked. Treat this as unsupported until evidence is added.")));
-  if (f.symptom) main.append(h("h4", null, "What was observed"), h("p", null, f.symptom));
-  if (arr(f.hypotheses).length) main.append(h("h4", null, "Possible causes"), h("ul", null, f.hypotheses.map((x) => h("li", null, str(x.claim), x.validation_needed ? h("div", { class: "sub" }, "To check: " + x.validation_needed) : null))));
-  if (arr(f.alternatives).length) main.append(h("h4", null, "Other explanations"), h("ul", null, f.alternatives.map((x) => h("li", null, str(x)))));
-  if (arr(f.missing).length) main.append(h("h4", null, "Missing information"), h("ul", null, f.missing.map((x) => h("li", null, str(x)))));
-  if (f.solutionClass) main.append(h("h4", null, "Recommended approach"), h("p", null, SOLUTION[f.solutionClass] || f.solutionClass));
+  const more = h("div");
+  if (f.symptom) more.append(h("h4", null, "What was observed"), h("p", null, f.symptom));
+  if (arr(f.hypotheses).length) more.append(h("h4", null, "Possible causes"), h("ul", null, f.hypotheses.map((x) => h("li", null, str(x.claim), x.validation_needed ? h("div", { class: "sub" }, "To check: " + x.validation_needed) : null))));
+  if (arr(f.alternatives).length) more.append(h("h4", null, "Other explanations"), h("ul", null, f.alternatives.map((x) => h("li", null, str(x)))));
+  if (arr(f.missing).length) more.append(h("h4", null, "Missing information"), h("ul", null, f.missing.map((x) => h("li", null, str(x)))));
+  if (f.solutionClass) more.append(h("h4", null, "Recommended approach"), h("p", null, SOLUTION[f.solutionClass] || f.solutionClass));
   const related = S.findings.filter((o) => o.id !== f.id && o.companyId === f.companyId && (o.id === f.relatedTo?.id || f.id === o.relatedTo?.id || (o.process && o.process === f.process && o.memoId !== f.memoId) || norm(o.title) === norm(f.title)));
-  if (related.length) main.append(h("h4", null, "Connected findings"), h("ul", null, related.slice(0, 5).map((o) => h("li", null, h("a", { class: "textlink", href: "#f-" + o.id, onclick: (e) => { e.preventDefault(); S.focusFinding = o.id; location.hash = "#c-" + o.companyId + "-diagnostics"; render(true); } }, o.title), h("span", { class: "sub" }, " · " + (memo(o.memoId)?.title || "") + " · " + REVIEW[reviewOf(o.id)][0].toLowerCase()), f.relatedTo?.id === o.id ? h("span", { class: "badge outline", style: "margin-left:6px" }, f.relatedTo.relation) : null))));
+  if (related.length) more.append(h("h4", null, "Connected findings"), h("ul", null, related.slice(0, 5).map((o) => h("li", null, h("a", { class: "textlink", href: "#f-" + o.id, onclick: (e) => { e.preventDefault(); S.focusFinding = o.id; location.hash = "#c-" + o.companyId + "-diagnostics"; render(true); } }, o.title), h("span", { class: "sub" }, " · " + (memo(o.memoId)?.title || "") + " · " + REVIEW[reviewOf(o.id)][0].toLowerCase()), f.relatedTo?.id === o.id ? h("span", { class: "badge outline", style: "margin-left:6px" }, f.relatedTo.relation) : null))));
   const meta = h("p", { class: "dmeta" });
   people([f.createdBy, f.editedBy, S.reviews[f.id]?.by, f.assigneeId]).then((ps) => {
     meta.textContent = [f.origin === "ai" ? "Drafted by the analysis of " + (memo(f.memoId)?.title || "a memo") : "Added by " + (ps[f.createdBy]?.name || "a teammate"), fmtDate(f.createdAt),
       f.editedBy ? "edited by " + (ps[f.editedBy]?.name || "a teammate") + " " + fmtWhen(f.editedAt) : null, S.reviews[f.id] ? REVIEW[st][1].toLowerCase() + " by " + (ps[S.reviews[f.id].by]?.name || "a reviewer") : "not reviewed"].filter(Boolean).join(" · ");
   });
-  main.append(meta);
+  more.append(meta);
+  main.append(h("details", { class: "fold" }, h("summary", null, "Causes, gaps and history"), more));
   // comments
   const cbox = h("div", { class: "comments" }, h("h4", { style: "margin-top:0" }, "Comments"));
   const clist = h("div"); cbox.append(clist);
@@ -278,16 +289,18 @@ function DiagnosticCard(f, opts = {}) {
   main.append(cbox);
   // side: review first, then ownership and follow-ups
   const side = h("div", { class: "dside" });
-  if (S.can.review) side.append(h("h4", null, "Review"), h("div", { class: "review-seg", role: "group", "aria-label": "Review decision" },
+  if (S.can.review) side.append(h("div", { class: "review-seg", role: "group", "aria-label": "Review decision" },
     [["accepted", "Accept"], ["needs_evidence", "Needs evidence"], ["rejected", "Reject"]].map(([k, l]) => h("button", { class: "btn sm" + (k === "accepted" && st !== "accepted" ? " primary" : "") + (k === "rejected" ? " ghost danger" : ""), type: "button", "aria-pressed": String(st === k), onclick: () => setReview(f, k) }, st === k ? statusIcon(k) : null, st === k ? REVIEW[k][0] : l))));
-  const asg = h("div", { class: "field", style: "margin-top:8px" }, h("label", { for: "as-" + f.id, style: "font-size:12px;color:var(--fg-3)" }, "Owner"));
-  const sel = h("select", { id: "as-" + f.id, class: "inp sm", disabled: !S.can.write, onchange: async (e) => { try { await S.db.doc("findings/" + f.id).update({ assigneeId: e.target.value || null, updatedAt: Date.now() }); logEvent(f.companyId, "assign", `assigned “${f.title}”`, { findingId: f.id }); } catch { toast("Couldn't save the owner."); } } }, h("option", { value: "" }, "Unassigned"));
-  teammates().then(async (tm) => { const ids = new Set(tm.map((p) => p.id)); if (f.assigneeId && !ids.has(f.assigneeId)) { const ps = await people([f.assigneeId]); tm = [...tm, ps[f.assigneeId] || { id: f.assigneeId, name: "Teammate" }]; } for (const p of tm) sel.append(h("option", { value: p.id, selected: p.id === f.assigneeId }, p.name || "Teammate")); });
+  const asg = h("div", { class: "field", style: "margin-top:6px" });
+  const sel = h("select", { id: "as-" + f.id, class: "inp sm", "aria-label": "Owner of this finding", disabled: !S.can.write, onchange: async (e) => { try { await S.db.doc("findings/" + f.id).update({ assigneeId: e.target.value || null, updatedAt: Date.now() }); logEvent(f.companyId, "assign", `assigned “${f.title}”`, { findingId: f.id }); } catch { toast("Couldn't save the owner."); } } }, h("option", { value: "" }, "No owner"));
+  teammates().then(async (tm) => { const ids = new Set(tm.map((p) => p.id)); if (f.assigneeId && !ids.has(f.assigneeId)) { const ps = await people([f.assigneeId]); tm = [...tm, ps[f.assigneeId] || { id: f.assigneeId, name: "Teammate" }]; } for (const p of tm) sel.append(h("option", { value: p.id, selected: p.id === f.assigneeId }, "Owner: " + (p.name || "Teammate"))); });
   asg.append(sel); side.append(asg);
-  side.append(h("h4", { style: "margin-top:12px" }, "Follow up"));
-  if (S.can.write) side.append(h("button", { class: "btn sm", type: "button", onclick: () => createTask({ title: f.nextAction || "Follow up: " + f.title, findingId: f.id, memoId: f.memoId, companyId: f.companyId }) }, svg(IC.actions), "Create task"),
-    h("button", { class: "btn sm", type: "button", onclick: () => main.replaceWith(findingEditor(f, () => el.replaceWith(DiagnosticCard(f, opts)))) }, svg(IC.edit), "Edit"));
-  side.append(h("button", { class: "btn sm", type: "button", onclick: () => { attachToChat({ companyId: f.companyId, memoId: f.memoId, ref: arr(f.evidence)[0]?.ref || null, text: f.title + ". " + (f.ownerImplication || ""), label: "Finding" }); openAssistant(); } }, svg(IC.spark), "Ask about this"));
+  const askAbout = () => { attachToChat({ companyId: f.companyId, memoId: f.memoId, ref: arr(f.evidence)[0]?.ref || null, text: f.title + ". " + (f.ownerImplication || ""), label: "Finding" }); openAssistant(); };
+  side.append(h("div", { class: "row", style: "margin-top:6px" },
+    S.can.write ? h("button", { class: "btn sm grow", type: "button", onclick: () => createTask({ title: f.nextAction || "Follow up: " + f.title, findingId: f.id, memoId: f.memoId, companyId: f.companyId }) }, svg(IC.plus), "Task") : null,
+    menuButton(h("button", { class: "btn sm", type: "button", "aria-label": "More finding actions" }, svg(IC.more)), () => [
+      S.can.write ? menuItem("Edit", () => main.replaceWith(findingEditor(f, () => el.replaceWith(DiagnosticCard(f, opts)))), { icon: IC.edit }) : null,
+      menuItem("Ask about this", askAbout, { icon: IC.spark })])));
   el.append(h("div", { class: "dbody" }, main, side));
   return el;
 }
@@ -334,20 +347,18 @@ function viewDiagnostics(view) {
     const firstOf = new Map(); for (const f of rankFindings(allF)) if (!firstOf.has(norm(f.title))) firstOf.set(norm(f.title), f.id);
     const card = (f) => DiagnosticCard(f, { similar: firstOf.get(norm(f.title)) !== f.id && reviewOf(f.id) !== "rejected" });
     const q = (k) => shown.filter((f) => (f.queue || "investigate_next") === k);
-    const kinds = [["all", "All types"], ["pain_point", "Pain points"], ["bottleneck", "Bottlenecks"], ["risk", "Risks"], ["opportunity", "Opportunities"]];
     view.replaceChildren(
-      pageHead("Findings", "Drafted from each memo's analysis. They stay drafts until a reviewer accepts them; importance and evidence are rated separately."),
+      pageHead("Findings"),
       !allF.length ? emptyState(IC.diag, "No findings yet", "Findings appear after a memo is analyzed. A memo can also produce none, if nothing actionable was said.") : [
         h("div", { class: "toolbar" },
-          h("div", { class: "seg", role: "group", "aria-label": "Review state" }, [["all", "All"], ["draft", "To review"], ["accepted", "Accepted"], ["needs_evidence", "Needs evidence"], ["rejected", "Rejected"]].map(([k, l]) =>
-            h("button", { type: "button", "aria-pressed": String(findFilter.review === k), onclick: () => { findFilter.review = k; draw(); } }, l, h("span", { class: "n" }, n(k))))),
-          h("select", { class: "inp sm", style: "width:auto;margin-left:auto", "aria-label": "Type", onchange: (e) => { findFilter.kind = e.target.value; draw(); } }, kinds.map(([k, l]) => h("option", { value: k, selected: findFilter.kind === k }, l)))),
+          h("div", { class: "seg", role: "group", "aria-label": "Review state" }, [["all", "All"], ["draft", "To review"], ["accepted", "Accepted"], ["needs_evidence", "Needs evidence"], ["rejected", "Rejected"]].filter(([k]) => k === "all" || k === "draft" || n(k) || findFilter.review === k).map(([k, l]) =>
+            h("button", { type: "button", "aria-pressed": String(findFilter.review === k), onclick: () => { findFilter.review = k; draw(); } }, l, h("span", { class: "n" }, n(k)))))),
         !shown.length ? h("div", { class: "empty flat" }, h("p", null, "Nothing matches this filter.")) :
         findFilter.review === "rejected" ? h("div", { class: "dlist" }, shown.map(card)) :
         h("div", { class: "queues" },
-          [["investigate_next", "Investigate next", "Potentially important, but needs more evidence before acting."], ["ready_to_test", "Ready to test", "Supported well enough to try a practical, reversible improvement."]].map(([k, t, d]) =>
-            h("section", null, h("div", { class: "group-h" }, h("h2", null, t), h("span", { class: "cnt" }, q(k).length), h("p", null, d)),
-              q(k).length ? h("div", { class: "dlist" }, q(k).map(card)) : h("p", { class: "hint", style: "padding:4px 0" }, "Nothing here."))))]);
+          [["investigate_next", "Investigate next", "Needs more evidence before acting"], ["ready_to_test", "Ready to test", "Supported well enough to try a small, reversible fix"]].map(([k, t, d]) =>
+            h("section", null, h("div", { class: "group-h", title: d }, h("h2", null, t), h("span", { class: "cnt" }, q(k).length)),
+              q(k).length ? h("div", { class: "dlist" }, q(k).map(card)) : null)))]);
     if (S.focusFinding) { const id = S.focusFinding; S.focusFinding = null; openCards.add(id); const el = $("#f-" + id); const f = S.findings.find((x) => x.id === id); if (el && f) { el.replaceWith(card(f)); $("#f-" + id)?.scrollIntoView({ block: "center" }); } }
   };
   currentView.refresh = () => { if (!document.querySelector(".dcard form, .dcard textarea:focus, .dcard select:focus")) draw(); };
@@ -395,9 +406,9 @@ function viewMetrics(view) {
     const order = new Map(companyMemos().map((m, i) => [m.id, i]));
     rows.sort((a, b) => (order.get(a.x.memoId) ?? 99) - (order.get(b.x.memoId) ?? 99) || cmpRef(a.x.ref || "0.0", b.x.ref || "0.0"));
     view.replaceChildren(
-      pageHead("Key numbers", "Every figure someone mentioned in " + c.name + "'s memos. Most were said out loud, not checked against records, so treat them as a starting point."),
+      pageHead("Key numbers"),
       rows.length ? metricsTable(rows) : null,
-      noValue.length ? h("section", { class: "sec" }, h("div", { class: "sec-h" }, h("h2", null, "Mentioned without a number"), h("p", null, "These came up, but nobody gave a figure. Worth asking about next time.")),
+      noValue.length ? h("section", { class: "sec" }, h("div", { class: "sec-h" }, h("h2", null, "No figure given"), h("p", null, "Worth asking next time")),
         h("div", { class: "card" }, h("ul", { class: "missing" }, noValue.map((x) => h("li", null, h("span", { style: "font-weight:500" }, str(x.label)), str(x.caveat) ? h("span", { class: "muted" }, x.caveat) : null, x.ref ? evLink(x.memoId, x.ref, "See where") : null))))) : null,
       !S.metrics.some((x) => x.companyId === c.id) ? emptyState(IC.metrics, "No numbers yet", "Figures people mention in memos (revenue, call volumes, team size, hours lost) show up here with where they were said.") : null);
   };
@@ -433,22 +444,22 @@ function viewActions(view) {
       return h("div", { class: "task" + (t.done ? " done" : "") },
         h("input", { type: "checkbox", checked: t.done, disabled: !S.can.write, "aria-label": (t.done ? "Reopen " : "Complete ") + t.title, onchange: async (e) => { try { await S.db.doc("tasks/" + t.id).update({ done: e.target.checked, doneAt: e.target.checked ? Date.now() : null, doneBy: S.uid }); logEvent(c.id, "task", `${e.target.checked ? "completed" : "reopened"} “${t.title}”`, { taskId: t.id }); } catch { toast("Couldn't update the task."); } } }),
         h("div", { style: "min-width:0" }, h("div", { class: "tt" }, t.title),
-          h("small", null, f ? ["From ", h("a", { href: "#c-" + c.id + "-diagnostics", onclick: () => { S.focusFinding = f.id; } }, f.title), " · "] : null, "Added by " + (ps[t.createdBy]?.name || "a teammate") + " " + fmtWhen(t.createdAt))),
-        h("span", { class: "c-as row", style: "font-size:13px;color:var(--fg-2)" }, t.assigneeId ? [avatar(ps[t.assigneeId], ps[t.assigneeId]?.name, "xs"), h("span", { style: "overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, ps[t.assigneeId]?.name || "Teammate")] : h("span", { class: "muted" }, "Unassigned")),
-        h("span", { class: "due num" + (!t.done && t.due && t.due < today ? " late" : "") }, t.due ? fmtShort(t.due) : h("span", { class: "muted" }, "No date")),
+          f ? h("small", null, "From ", h("a", { href: "#c-" + c.id + "-diagnostics", onclick: () => { S.focusFinding = f.id; } }, f.title)) : null),
+        h("span", { class: "c-as row", style: "font-size:13px;color:var(--fg-2)" }, t.assigneeId ? [avatar(ps[t.assigneeId], ps[t.assigneeId]?.name, "xs"), h("span", { style: "overflow:hidden;text-overflow:ellipsis;white-space:nowrap" }, ps[t.assigneeId]?.name || "Teammate")] : null),
+        h("span", { class: "due num" + (!t.done && t.due && t.due < today ? " late" : "") }, t.due ? fmtShort(t.due) : null),
         t.memoId && memo(t.memoId) ? h("a", { class: "icon-btn sm", href: "#m-" + t.memoId, "aria-label": "Open the memo", title: memo(t.memoId).title }, svg(IC.memo)) : h("span"));
     };
     view.replaceChildren(
-      pageHead("Tasks", "Follow-ups, checks and pilots for " + c.name + ". Nothing here contacts the customer or changes their systems; people do that."),
+      pageHead("Tasks"),
       S.can.write ? h("form", { class: "task-add", onsubmit: async (e) => { e.preventDefault(); if (!str(nv.title)) { $("#nt-title").focus(); return; } await createTask({ ...nv, companyId: c.id }); } },
-        h("label", { class: "sr", for: "nt-title" }, "New task"), h("input", { id: "nt-title", class: "inp t-in", placeholder: "Add a task, e.g. Pull last month's missed-call log", oninput: (e) => (nv.title = e.target.value) }),
-        h("select", { id: "nt-as", class: "inp", "aria-label": "Assign to", onchange: (e) => (nv.assigneeId = e.target.value) }, h("option", { value: "" }, "Unassigned"), tm.map((p) => h("option", { value: p.id }, p.name || "Teammate"))),
-        h("input", { id: "nt-due", class: "inp", type: "date", "aria-label": "Due date", oninput: (e) => (nv.due = e.target.value) }),
-        h("button", { class: "btn primary", type: "submit" }, svg(IC.plus), "Add task")) : null,
+        h("label", { class: "sr", for: "nt-title" }, "New task"), h("input", { id: "nt-title", class: "inp t-in", placeholder: "Add a task…", autocomplete: "off", oninput: (e) => { nv.title = e.target.value; e.target.form.querySelectorAll(".opt-ctl").forEach((x) => { x.hidden = !str(nv.title); }); } }),
+        h("select", { id: "nt-as", class: "inp opt-ctl", hidden: true, "aria-label": "Assign to", onchange: (e) => (nv.assigneeId = e.target.value) }, h("option", { value: "" }, "No owner"), tm.map((p) => h("option", { value: p.id }, p.name || "Teammate"))),
+        h("input", { id: "nt-due", class: "inp opt-ctl", hidden: true, type: "date", "aria-label": "Due date", oninput: (e) => (nv.due = e.target.value) }),
+        h("button", { class: "btn primary", type: "submit" }, "Add")) : null,
       ts.length ? [
         h("section", null, h("div", { class: "group-h" }, h("h2", null, "Open"), h("span", { class: "cnt" }, open.length)), open.length ? h("div", { class: "table" }, open.map(row)) : h("p", { class: "hint" }, "Everything's done.")),
         done.length ? h("section", { class: "sec" }, h("div", { class: "group-h" }, h("h2", null, "Completed"), h("span", { class: "cnt" }, done.length)), h("div", { class: "table" }, done.map(row))) : null]
-        : emptyState(IC.actions, "No tasks yet", "Create one here, from a finding, or from an Ask Starwell answer."));
+        : emptyState(IC.actions, "No tasks yet", "Add one above, or make one from a finding."));
   };
   currentView.refresh = () => { if (!document.activeElement?.closest("form")) draw(); };
   draw();

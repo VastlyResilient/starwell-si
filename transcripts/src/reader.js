@@ -64,8 +64,8 @@ function viewMemo(view, mid) {
     const st = m.stages || {};
     const notesN = m.notesParts || 0, notesD = Math.min(m.notesDone || 0, notesN);
     const cls = (s) => s === "done" ? "done" : s === "running" ? "now" : s === "failed" ? "fail" : "todo";
-    let steps = m.saving ? [["now", "Saving to " + (company(m.companyId)?.name || "the company")], ["todo", "Writing the summary"], ["todo", "Finding pain points, bottlenecks and figures, and checking every quote against the source"], ["todo", "Organizing and annotating the transcript"]]
-      : [["done", "Saved to " + (company(m.companyId)?.name || "the company")], [cls(st.summary), "Writing the summary"], [cls(st.findings), "Finding pain points, bottlenecks and figures, and checking every quote against the source"], [cls(st.notes), "Organizing and annotating the transcript" + (notesN > 1 ? ` · ${notesD} of ${notesN} parts` : "")]];
+    let steps = m.saving ? [["now", "Saving to " + (company(m.companyId)?.name || "the company")], ["todo", "Writing the summary"], ["todo", "Finding pain points and checking quotes"], ["todo", "Organizing the transcript"]]
+      : [["done", "Saved to " + (company(m.companyId)?.name || "the company")], [cls(st.summary), "Writing the summary"], [cls(st.findings), "Finding pain points and checking quotes"], [cls(st.notes), "Organizing the transcript" + (notesN > 1 ? ` (${notesD} of ${notesN})` : "")]];
     // two stages run side by side; show one spinner, on the first running step
     let seen = false; steps = steps.map(([s, t]) => { if (s === "now") { if (seen) return ["todo", t + " (queued)"]; seen = true; } return [s, t]; });
     const failed = m.status === "error" || isStale(m);
@@ -73,11 +73,11 @@ function viewMemo(view, mid) {
     const label = failed ? (isStale(m) ? "Stopped before it finished" : "Didn't finish") : m.saving ? "Saving" : nowIdx >= 0 ? `Step ${nowIdx + 1} of ${steps.length}: ${steps[nowIdx][1].replace(/ \(queued\)$/, "")}` : "Starting";
     const here = m.saving || S.running.has(mid);
     return h("section", { class: "progress-card" + (failed ? " failed" : "") },
-      h("div", { class: "pc-top" }, failed ? svg(IC.info) : h("span", { class: "spin" }), h("h2", null, failed ? "Analysis interrupted" : "Analyzing this memo"), failed ? null : h("span", { class: "pct", id: "lpct" }, "0%")),
-      failed ? h("p", { style: "margin-top:6px;font-size:13px" }, m.error || "The tab running the analysis was probably closed.") : [h("div", { class: "lbar", role: "progressbar", "aria-label": "Analysis progress", "aria-valuemin": "0", "aria-valuemax": "100" }, h("i", { id: "lbar" })), h("p", { class: "sr", id: "lstage", "aria-live": "polite" }, label)],
-      h("ol", { class: "lsteps" }, steps.map(([s, t]) => h("li", { class: s }, t))),
+      h("div", { class: "pc-top" }, failed ? svg(IC.info) : h("span", { class: "spin" }), h("h2", { id: failed ? null : "lstage", "aria-live": "polite" }, failed ? "Analysis interrupted" : label), failed ? null : h("span", { class: "pct", id: "lpct" }, "0%")),
+      failed ? h("p", { style: "margin-top:6px;font-size:13px" }, m.error || "The tab running the analysis was probably closed.") : h("div", { class: "lbar", role: "progressbar", "aria-label": "Analysis progress", "aria-valuemin": "0", "aria-valuemax": "100" }, h("i", { id: "lbar" })),
+      failed ? h("ol", { class: "lsteps" }, steps.map(([s, t]) => h("li", { class: s }, t))) : null,
       h("div", { class: "pc-foot" },
-        h("p", { class: "hint" }, failed ? "Finished steps are kept. Resuming picks up from the step that failed; you don't need to upload anything again." : here ? (IS_PHONE ? "Keep this screen on. " : "Keep this tab open. ") + "Most memos take one to three minutes. The original transcript is readable now." : "A teammate's browser is running this analysis. The results appear here on their own."),
+        h("p", { class: "hint" }, failed ? "Finished steps are kept; resuming picks up where it stopped." : here ? (IS_PHONE ? "Keep this screen on" : "Keep this tab open") + " · usually 1 to 3 minutes" : "Running in a teammate's browser"),
         failed && S.sample && S.can.write ? h("button", { class: "btn primary sm", type: "button", onclick: () => runAnalysis(mid) }, "Resume analysis") : null,
         S.running.has(mid) ? h("button", { class: "btn ghost sm", type: "button", onclick: () => confirmDialog("Stop the analysis?", "Finished steps are kept, and you can resume later.", "Stop", () => S.running.get(mid)?.ctl.abort()) }, "Stop") : null));
   }
@@ -141,7 +141,7 @@ function viewMemo(view, mid) {
     const spk = (name) => str(m.speakerNames?.[name]) || name || "Speaker";
 
     let content;
-    if (v === "summary" && a) content = summaryView(a, m, fs, (fid) => { openCards.add(fid); setView("findings"); requestAnimationFrame(() => $("#f-" + fid)?.scrollIntoView({ block: "start" })); });
+    if (v === "summary" && a) content = summaryView(a, m, fs, (fid) => { if (fid) openCards.add(fid); setView("findings"); if (fid) requestAnimationFrame(() => $("#f-" + fid)?.scrollIntoView({ block: "start" })); });
     else if (v === "organized" && sections.length) content = h("div", { class: "doc", "data-memo": mid, style: "max-width:none" }, sections.map((s, i) => {
       const turns = arr(s.turns || s.exchanges);
       const refs = turns.map((t) => t.ref).filter(Boolean);
@@ -195,7 +195,7 @@ function viewMemo(view, mid) {
     view.replaceChildren(
       h("div", { class: "memo-h" },
         h("div", { class: "memo-top" }, h("h1", null, m.title || "Untitled memo"),
-          !m.saving ? h("div", { class: "acts" }, h("button", { class: "btn ghost sm", type: "button", onclick: () => detailsDialog(m, ps) }, "Details"), menuButton(h("button", { class: "icon-btn", type: "button", "aria-label": "More actions" }, svg(IC.more)), menuItems)) : null),
+          !m.saving ? h("div", { class: "acts" }, menuButton(h("button", { class: "icon-btn", type: "button", "aria-label": "More actions" }, svg(IC.more)), menuItems)) : null),
         h("p", { class: "meta-line" }, metaBits.map((b, i) => [i ? h("span", { class: "sep-dot" }) : null, h("span", null, b)]), h("span", { class: "sep-dot" }), h("span", { class: "who" }, avatar(ps[m.ownerId], owner, "xs"), "Uploaded by " + owner),
           m.status === "ready" && !m.saving ? null : h("span", { class: "stat" }, statusState(m))),
         m.status === "ready" && a && a.version !== 2 ? h("div", { class: "notice info", style: "margin-top:12px" }, h("span", null, "This memo was analyzed by an earlier version. Run the full analysis from the ⋯ menu to get transcript notes, findings and source links.")) : null),
@@ -241,22 +241,25 @@ function summaryView(a, m, fs, openFinding) {
   const top = dedupeFindings(rankFindings(fs));
   const nums = metricRows(m.companyId).filter((r) => r.all.some((x) => x.memoId === mid)).map((r) => ({ x: r.all.find((x) => x.memoId === mid), all: [r.all.find((x) => x.memoId === mid)] }));
   const sec = (title, lede, ...body) => h("section", { class: "sec" }, h("h2", null, title), lede ? h("p", { class: "lede" }, lede) : null, body);
+  // the long tail of the brief: one tidy row each, opened on demand, nothing left out
+  const fold = (title, n, lede, ...body) => h("details", { class: "fold" }, h("summary", null, h("span", null, title), n ? h("span", { class: "cnt" }, n) : null), h("div", { class: "fold-b" }, lede ? h("p", { class: "lede" }, lede) : null, body));
   return h("div", { class: "brief", "data-memo": mid },
     h("section", { class: "doc" }, str(m.headline) ? h("p", { class: "headline", style: "margin-bottom:14px" }, m.headline) : null, str(a.executive_summary).split(/\n\n+/).map((p) => h("p", null, p))),
     h("div", { class: "glance" }, [["Purpose", g.purpose], ["Outcome", g.outcome], ["Interest level", g.interest_level], ["Next step", g.next_step]].filter(([, x]) => str(x)).map(([k, x]) => h("div", null, h("span", { class: "label" }, k), h("b", null, str(x))))),
-    top.length ? sec("Top findings", null, h("div", { class: "flist" }, top.slice(0, 5).map((f) => h("button", { type: "button", onclick: () => openFinding(f.id) }, statusIcon(reviewOf(f.id)), h("span", { style: "min-width:0" }, h("b", null, f.title), h("small", null, f.ownerImplication || "")), h("span", { class: "row" }, kindTag(f.kind)))))) : null,
-    nums.length ? sec("Key numbers", null, metricsTable(nums, { inMemo: true })) : null,
-    sec("Agreed next steps", null, arr(a.action_items).length ? h("ul", { class: "plain steps" }, a.action_items.map((t) => h("li", null, h("span", null, str(t.task)), h("span", { class: "muted", style: "font-size:13px" }, [str(t.owner), str(t.due) && "due " + str(t.due)].filter(Boolean).join(" · ")), refs([t.ref]),
-      S.can.write ? h("button", { class: "btn ghost sm", type: "button", onclick: () => createTask({ title: str(t.task), memoId: mid, companyId: m.companyId }) }, svg(IC.plus), "Add to Tasks") : null))) : h("p", { class: "muted" }, "None were agreed in this memo.")),
-    sec("Open questions", null, arr(a.open_questions).length ? h("ul", { class: "plain" }, a.open_questions.map((q) => h("li", null, str(q)))) : h("p", { class: "muted" }, "None recorded.")),
-    a.tone && (str(a.tone.overall) || arr(a.tone.moments).length) ? sec("Tone and delivery", "Read from the wording and, for recordings, measured delivery (volume, pace, pauses). These are cues to read with the passage, not measurements of how anyone felt.",
+    top.length ? sec("Top findings", null, h("div", { class: "flist" }, top.slice(0, 3).map((f) => h("button", { type: "button", onclick: () => openFinding(f.id) }, statusIcon(reviewOf(f.id)), h("span", { style: "min-width:0" }, h("b", null, f.title), h("small", null, f.ownerImplication || "")), h("span", { class: "row" }, kindTag(f.kind))))), top.length > 3 ? h("button", { class: "linkish", type: "button", style: "margin-top:10px;font-size:13px", onclick: () => openFinding(null) }, "All " + top.length + " findings") : null) : null,
+    arr(a.action_items).length ? sec("Agreed next steps", null, arr(a.action_items).length ? h("ul", { class: "plain steps" }, a.action_items.map((t) => h("li", null, h("span", null, str(t.task)), h("span", { class: "muted", style: "font-size:13px" }, [str(t.owner), str(t.due) && "due " + str(t.due)].filter(Boolean).join(" · ")), refs([t.ref]),
+      S.can.write ? h("button", { class: "btn ghost sm", type: "button", onclick: () => createTask({ title: str(t.task), memoId: mid, companyId: m.companyId }) }, svg(IC.plus), "Task") : null))) : null) : null,
+    h("div", { class: "folds" },
+    nums.length ? fold("Key numbers", nums.length, null, metricsTable(nums, { inMemo: true })) : null,
+    arr(a.open_questions).length ? fold("Open questions", a.open_questions.length, null, h("ul", { class: "plain" }, a.open_questions.map((q) => h("li", null, str(q))))) : null,
+    a.tone && (str(a.tone.overall) || arr(a.tone.moments).length) ? fold("Tone and delivery", arr(a.tone.moments).length, "Read from the wording and, for recordings, measured delivery (volume, pace, pauses). These are cues to read with the passage, not measurements of how anyone felt.",
       str(a.tone.overall) ? h("p", { class: "doc" }, a.tone.overall) : null,
       h("ul", { class: "tone-list" }, arr(a.tone.moments).map((t) => h("li", null, h("span", { class: "tag", style: "--nc: var(--emo)" }, h("i", { class: "dot" }), str(t.emotion) || "Tone"), h("span", null, str(t.note), " ", refs([t.ref])))))) : null,
-    arr(a.meeting_flow).length ? sec("How the meeting went", null, h("ol", { class: "flow" }, a.meeting_flow.map((f) => h("li", null, h("h4", null, str(f.phase)), h("p", null, str(f.summary), " ", refs(f.refs)))))) : null,
-    arr(a.topics).length ? sec("Everything covered", "Every topic, with each point made and where it was said.", a.topics.map((t) => h("div", { class: "topic" }, h("h4", null, str(t.topic)), h("ul", null, arr(t.details).map((d) => h("li", null, str(d.text ?? d), " ", refs(d.refs))))))) : null,
-    arr(a.quotes).length ? sec("In their words", null, a.quotes.map((q) => h("blockquote", { class: "quote" }, h("p", null, "“" + str(q.quote).replace(/^["“]|["”]$/g, "") + "”"), h("footer", null, h("b", null, str(q.speaker) || "Speaker"), str(q.why) ? " · " + str(q.why) : "", " ", refs([q.ref]))))) : null,
-    arr(a.participants).length || arr(a.people_mentioned).length ? sec("People", null, h("div", { class: "tbl-wrap" }, h("table", null, h("thead", null, h("tr", null, h("th", null, "Name"), h("th", null, "Role"), h("th", null, "Notes"))),
-      h("tbody", null, [...arr(a.participants).map((p) => [p.name, [p.role, p.side].filter(str).join(" · "), p.notes, "In the meeting"]), ...arr(a.people_mentioned).map((p) => [p.name, p.role, p.context, "Mentioned"])].map(([n, r, x, k]) => h("tr", null, h("td", null, h("b", { style: "font-weight:500" }, str(n) || "Unnamed"), h("small", null, k)), h("td", null, str(r)), h("td", null, str(x)))))))) : null);
+    arr(a.meeting_flow).length ? fold("How the meeting went", a.meeting_flow.length, null, h("ol", { class: "flow" }, a.meeting_flow.map((f) => h("li", null, h("h4", null, str(f.phase)), h("p", null, str(f.summary), " ", refs(f.refs)))))) : null,
+    arr(a.topics).length ? fold("Everything covered", a.topics.length, null, a.topics.map((t) => h("div", { class: "topic" }, h("h4", null, str(t.topic)), h("ul", null, arr(t.details).map((d) => h("li", null, str(d.text ?? d), " ", refs(d.refs))))))) : null,
+    arr(a.quotes).length ? fold("In their words", a.quotes.length, null, a.quotes.map((q) => h("blockquote", { class: "quote" }, h("p", null, "“" + str(q.quote).replace(/^["“]|["”]$/g, "") + "”"), h("footer", null, h("b", null, str(q.speaker) || "Speaker"), str(q.why) ? " · " + str(q.why) : "", " ", refs([q.ref]))))) : null,
+    arr(a.participants).length || arr(a.people_mentioned).length ? fold("People", arr(a.participants).length + arr(a.people_mentioned).length, null, h("div", { class: "tbl-wrap" }, h("table", null, h("thead", null, h("tr", null, h("th", null, "Name"), h("th", null, "Role"), h("th", null, "Notes"))),
+      h("tbody", null, [...arr(a.participants).map((p) => [p.name, [p.role, p.side].filter(str).join(" · "), p.notes, "In the meeting"]), ...arr(a.people_mentioned).map((p) => [p.name, p.role, p.context, "Mentioned"])].map(([n, r, x, k]) => h("tr", null, h("td", null, h("b", { style: "font-weight:500" }, str(n) || "Unnamed"), h("small", null, k)), h("td", null, str(r)), h("td", null, str(x)))))))) : null));
 }
 function findingsView(m, fs, a, analyzing) {
   const ranked = rankFindings(fs).concat(fs.filter((f) => reviewOf(f.id) === "rejected"));
@@ -301,39 +304,40 @@ function viewNewMemo(view) {
   const D = S.draft;
   const bind = (k) => (e) => { D[k] = e.target.value; if (k === "title") titleErr.hidden = true; };
   const inp = (k, l, ph, type = "text") => h("div", { class: "field" }, h("label", { for: "n-" + k }, l), h("input", { id: "n-" + k, type, value: D[k], placeholder: ph, oninput: bind(k) }));
-  const titleErr = h("div", { class: "err", hidden: true }, "Give the memo a title so the team can find it.");
+  const titleErr = h("div", { class: "err", hidden: true }, "Give the memo a title.");
   const srcErr = h("div", { class: "err", hidden: true, style: "margin-top:8px" }, "Add at least one recording, file or pasted transcript.");
   const srcList = h("div", { class: "srcs" });
   const paste = h("textarea", { id: "n-paste", rows: "4", placeholder: "Paste a Voice Memos or Notes transcript, an email, or typed notes." });
   const drop = h("div", { class: "drop", tabindex: "0", role: "button", "aria-label": "Add recordings or files", onclick: () => $("#filePick").click(), onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("#filePick").click(); } },
     ondragover: (e) => { e.preventDefault(); drop.classList.add("over"); }, ondragleave: () => drop.classList.remove("over"), ondrop: (e) => { e.preventDefault(); drop.classList.remove("over"); addFiles(e.dataTransfer.files); } },
     h("span", { class: "d-ic" }, svg(IS_PHONE ? IC.mic : IC.upload, 18)),
-    h("b", null, IS_PHONE ? "Choose a recording or file" : "Drop recordings, notes and documents"), h("p", null, IS_PHONE ? "Voice memos, notes exports, PDFs or photos of notes" : "or click to choose. Add everything from the interview: the voice memo, typed notes, a photo of handwritten notes."),
-    IS_PHONE ? null : h("p", { class: "fmt" }, "M4A, MP3, WAV, CAF, MOV, MP4 · TXT, DOCX, PDF, RTF, VTT · JPG, PNG"));
+    h("b", null, IS_PHONE ? "Choose a recording or file" : "Drop the recording or notes here"), h("p", null, IS_PHONE ? "Voice memos, notes, PDFs or photos" : "or click to choose · audio, video, documents or photos"));
   const goBtn = h("button", { class: "btn primary lg", type: "button", onclick: submit }, "Save and analyze");
   const status = h("span", { class: "st", "aria-live": "polite" });
   const destSel = h("select", { id: "n-company", class: "inp", onchange: (e) => { D.companyId = e.target.value; } }, S.companies.map((c) => h("option", { value: c.id, selected: c.id === D.companyId }, c.name)));
-  const lang = h("div", { class: "field", style: "max-width:260px;margin-bottom:12px" }, h("label", { for: "n-language" }, "Language spoken"), h("select", { id: "n-language", onchange: bind("language") }, [["english", "English"], ["spanish", "Spanish"], ["portuguese", "Portuguese"], ["french", "French"], ["vietnamese", "Vietnamese"], ["chinese", "Chinese"], ["korean", "Korean"], ["tagalog", "Tagalog"], ["arabic", "Arabic"]].map(([k, l]) => h("option", { value: k, selected: D.language === k }, l))));
+  const lang = h("label", { class: "lang" }, h("span", { class: "sr" }, "Language spoken"), h("select", { id: "n-language", class: "inp sm", onchange: bind("language") }, [["english", "English"], ["spanish", "Spanish"], ["portuguese", "Portuguese"], ["french", "French"], ["vietnamese", "Vietnamese"], ["chinese", "Chinese"], ["korean", "Korean"], ["tagalog", "Tagalog"], ["arabic", "Arabic"]].map(([k, l]) => h("option", { value: k, selected: D.language === k }, l === "English" ? "Spoken in English" : "Spoken in " + l))));
   const crew = roster();
+  const pasteBox = h("div", { class: "field", hidden: !D.pasteOpen, style: "margin-top:12px" }, h("label", { class: "sr", for: "n-paste" }, "Paste text"), paste,
+    h("div", { style: "display:flex;justify-content:flex-end;margin-top:8px" }, h("button", { class: "btn sm", type: "button", onclick: () => { const t = paste.value.trim(); if (!t) return; addSource({ kind: "paste", name: "Pasted text " + (D.sources.filter((s) => s.kind === "paste").length + 1), size: t.length, status: "ready", text: t }); paste.value = ""; } }, "Add pasted text")));
   view.replaceChildren(
-    h("div", { class: "page-h" }, h("div", null, h("h1", null, "New memo"), h("label", { class: "dest-inline", for: "n-company" }, "Saving to", destSel))),
-    !S.sample ? h("div", { class: "notice warn", style: "margin-bottom:16px" }, h("span", null, "AI analysis isn't available in this view. Open the page in Claude to analyze memos.")) : null,
-    h("section", { class: "card" }, h("div", { class: "card-h" }, h("div", { class: "nm-step" }, h("span", { class: "n" }, "1"), h("h2", null, "Add the interview"))),
-      h("div", { class: "card-b" }, lang, drop, srcErr, srcList,
-        h("details", { class: "howto" }, h("summary", null, "Getting a recording from iPhone Voice Memos"), h("ul", null, h("li", null, "In Voice Memos, tap the recording, then ••• › Share › Save to Files. Then tap the box above and pick it from Recents."), h("li", null, "Or copy Apple's transcript (iOS 18 and later) and paste it below. That's fastest for long memos."), h("li", null, "Audio is transcribed in this browser and isn't uploaded anywhere. Expect about half the recording's length."))),
-        h("div", { class: "or" }, "or paste text"),
-        h("div", { class: "field" }, h("label", { class: "sr", for: "n-paste" }, "Paste text"), paste,
-          h("div", { style: "display:flex;justify-content:flex-end;margin-top:8px" }, h("button", { class: "btn sm", type: "button", onclick: () => { const t = paste.value.trim(); if (!t) return; addSource({ kind: "paste", name: "Pasted text " + (D.sources.filter((s) => s.kind === "paste").length + 1), size: t.length, status: "ready", text: t }); paste.value = ""; } }, "Add pasted text"))),
-        IS_PHONE ? h("p", { class: "notice", style: "margin-top:12px" }, h("span", null, "Keep this screen on while recordings transcribe. Your phone pauses the work when it locks or you switch apps.")) : null)),
-    h("section", { class: "card", style: "margin-top:16px" }, h("div", { class: "card-h" }, h("div", { class: "nm-step" }, h("span", { class: "n" }, "2"), h("h2", null, "About the conversation"))),
-      h("div", { class: "card-b" }, h("div", { class: "grid2" },
-        h("div", { class: "field full" }, h("label", { for: "n-title" }, "Title"), h("input", { id: "n-title", value: D.title, placeholder: "e.g. Dispatcher walkthrough with Maria", oninput: bind("title") }), titleErr, h("span", { class: "hint" }, "Leave it blank to use the interviewee's name and role.")),
-        inp("interviewee", "Interviewee", "Who you spoke with"), inp("role", "Their role", "e.g. Dispatcher"),
-        h("div", { class: "field" }, h("label", { for: "n-type" }, "Who was interviewed"), h("select", { id: "n-type", onchange: bind("type") }, TYPES.map((t) => h("option", { value: t, selected: D.type === t }, t === "Owner" ? "Owner / founder" : t === "Staff" ? "Staff / employee" : t)))),
-        inp("recordedDate", "Recorded on", "", "date"),
-        h("div", { class: "field" }, h("label", { for: "n-sourceType" }, "What this is"), h("select", { id: "n-sourceType", onchange: bind("sourceType") }, SOURCE_TYPES.map(([k, l]) => h("option", { value: k, selected: D.sourceType === k }, l)))),
-        h("div", { class: "field" }, h("label", { for: "n-interviewers" }, "Starwell team present"), h("input", { id: "n-interviewers", value: D.interviewers, placeholder: crew.join(", "), list: "crew-list", oninput: bind("interviewers") }), h("datalist", { id: "crew-list" }, crew.map((n) => h("option", { value: n })))),
-        h("div", { class: "field full" }, h("label", { for: "n-context" }, "Context for the analysis ", h("span", { class: "muted", style: "font-weight:400" }, "(optional)")), h("textarea", { id: "n-context", rows: "2", placeholder: "Why this meeting happened and what you wanted to learn.", oninput: bind("context") }, D.context))))),
+    h("div", { class: "page-h" }, h("div", null, h("h1", null, "New memo"), h("label", { class: "dest-inline", for: "n-company" }, "for", destSel))),
+    !S.sample ? h("div", { class: "notice warn", style: "margin-bottom:16px" }, h("span", null, "Open this page in Claude to analyze memos.")) : null,
+    h("section", { class: "card" }, h("div", { class: "card-b" }, drop, srcErr, srcList,
+      h("div", { class: "nm-tools" },
+        h("button", { class: "btn ghost sm", type: "button", "aria-expanded": String(!!D.pasteOpen), onclick: (e) => { D.pasteOpen = !D.pasteOpen; pasteBox.hidden = !D.pasteOpen; e.currentTarget.setAttribute("aria-expanded", String(D.pasteOpen)); if (D.pasteOpen) paste.focus(); } }, svg(IC.text), "Paste text"),
+        lang,
+        h("details", { class: "howto" }, h("summary", null, "From iPhone Voice Memos"), h("ul", null, h("li", null, "In Voice Memos, tap the recording, then ••• › Share › Save to Files. Then tap the box above and pick it from Recents."), h("li", null, "Or copy Apple's transcript (iOS 18 and later) and paste it. Fastest for long memos."), h("li", null, "Audio is transcribed on this device and isn't uploaded anywhere. It takes about half the recording's length.")))),
+      pasteBox)),
+    h("section", { class: "card", style: "margin-top:12px" }, h("div", { class: "card-b" }, h("div", { class: "grid3" },
+        h("div", { class: "field" }, h("label", { for: "n-title" }, "Title"), h("input", { id: "n-title", value: D.title, placeholder: "Optional", oninput: bind("title") }), titleErr),
+        inp("interviewee", "Interviewee", "Name"), inp("role", "Their role", "e.g. Dispatcher")),
+      h("details", { class: "fold flat", open: D.moreOpen || null, ontoggle: (e) => { D.moreOpen = e.target.open; } }, h("summary", null, h("span", null, "More details")),
+        h("div", { class: "grid2", style: "padding-top:12px" },
+          h("div", { class: "field" }, h("label", { for: "n-type" }, "Who was interviewed"), h("select", { id: "n-type", onchange: bind("type") }, TYPES.map((t) => h("option", { value: t, selected: D.type === t }, t === "Owner" ? "Owner / founder" : t === "Staff" ? "Staff / employee" : t)))),
+          inp("recordedDate", "Recorded on", "", "date"),
+          h("div", { class: "field" }, h("label", { for: "n-sourceType" }, "What this is"), h("select", { id: "n-sourceType", onchange: bind("sourceType") }, SOURCE_TYPES.map(([k, l]) => h("option", { value: k, selected: D.sourceType === k }, l)))),
+          h("div", { class: "field" }, h("label", { for: "n-interviewers" }, "Starwell team present"), h("input", { id: "n-interviewers", value: D.interviewers, placeholder: crew.join(", "), list: "crew-list", oninput: bind("interviewers") }), h("datalist", { id: "crew-list" }, crew.map((n) => h("option", { value: n })))),
+          h("div", { class: "field full" }, h("label", { for: "n-context" }, "Context for the analysis"), h("textarea", { id: "n-context", rows: "2", placeholder: "Why this meeting happened and what you wanted to learn.", oninput: bind("context") }, D.context)))))),
     h("div", { class: "actionbar" }, status, h("a", { class: "btn ghost lg", href: "#c-" + D.companyId }, "Cancel"), goBtn));
   function srcIcon(s) { return svg(s.kind === "audio" ? IC.mic : s.kind === "image" ? IC.image : s.kind === "paste" ? IC.text : IC.file); }
   function drawSources() {
@@ -348,7 +352,7 @@ function viewNewMemo(view) {
     goBtn.disabled = !S.sample;
     goBtn.textContent = busy.length && D.autoSubmit ? "Will analyze when ready" : busy.length ? "Analyze when ready" : "Save and analyze";
     const pct = busy.length ? Math.round(busy.reduce((n, s) => n + (s.progress || 0), 0) / busy.length * 100) : 0;
-    status.textContent = !S.sample ? "Open the page in Claude to analyze." : busy.length ? `Transcribing ${busy.length} of ${D.sources.length} · ${pct}%` + (D.autoSubmit ? " · analysis starts when it's done" : "") : ready.length ? plural(ready.length, "source") + " ready · uses your Claude account" : "Add a recording, file or text to start.";
+    status.textContent = !S.sample ? "" : busy.length ? `Transcribing ${pct}%` + (IS_PHONE ? " · keep this screen on" : "") + (D.autoSubmit ? " · then analyzing" : "") : ready.length ? plural(ready.length, "file") + " ready" : "";
     document.title = busy.length ? `Transcribing ${pct}% · Starwell` : "Starwell SI Transcripts";
     if (D.sources.length) srcErr.hidden = true;
     if (D.autoSubmit && !busy.length && ready.length && currentView.isNew) { D.autoSubmit = false; submit(); }
@@ -368,6 +372,7 @@ function viewNewMemo(view) {
     if (busy) { D.autoSubmit = !D.autoSubmit; drawSources(); if (D.autoSubmit) toast("Analysis will start as soon as transcription finishes. Keep this tab open."); return; }
     if (!str(D.title)) D.title = [D.interviewee, D.role].map(str).filter(Boolean).join(", ") || ready.find((s) => s.kind !== "paste")?.name.replace(/\.[a-z0-9]+$/i, "") || "";
     titleErr.hidden = !!str(D.title);
+    if (!str(D.title)) D.title = "Interview " + fmtShort(D.recordedDate || Date.now());
     if (!str(D.title)) { $("#n-title").focus(); return; }
     if (!ready.length || !company(D.companyId)) return;
     const id = newId("m"), cid = D.companyId; // the company is fixed now, even if someone switches company mid-save
@@ -452,9 +457,9 @@ function renderAssistant(force) {
       chat.attach ? h("div", { class: "a-chip" }, h("span", null, h("b", null, (chat.attach.label || "Passage") + ": "), "“" + chat.attach.text + "”"),
         h("button", { class: "icon-btn sm", type: "button", style: "width:22px;height:22px", "aria-label": "Remove the attached passage", onclick: () => { chat.attach = null; renderAssistant(true); } }, svg(IC.x, 12))) : null,
       h("div", { class: "a-row" }, ta, send)),
-    h("p", { class: "a-foot" }, S.sample ? "Answers use only " + c.name + "'s memos and can be wrong. Check the linked passages." : "Open this page in Claude to ask questions."));
+    h("p", { class: "a-foot" }, S.sample ? "Answers can be wrong. Check the linked lines." : "Open this page in Claude to ask questions."));
   const msgs = h("div", { class: "a-msgs", "aria-live": "polite" });
-  if (!chat.messages.length) msgs.append(h("p", { class: "a-intro" }, scopeMemo ? "Ask anything about “" + (scopeMemo.title || "this memo") + "”, or highlight a passage in the transcript." : "Ask anything about " + c.name + ". Every answer cites the passages it relies on."),
+  if (!chat.messages.length) msgs.append(h("p", { class: "a-intro" }, scopeMemo ? "Ask about this memo, or select any words in the transcript." : "Ask about anything in " + c.name + "'s memos."),
     h("div", { class: "a-start" }, (scopeMemo ? STARTERS_MEMO : STARTERS_CO).map(([l, d]) => h("button", { type: "button", disabled: !S.sample, title: d, onclick: () => ask(l + ". " + d) }, svg(IC.spark, 13), l))));
   for (const m of chat.messages) msgs.append(m.role === "user" ? h("div", { class: "u-msg" }, m.attach ? h("blockquote", null, "“" + m.attach.text.slice(0, 220) + (m.attach.text.length > 220 ? "…" : "") + "”") : null, m.text) : answerEl(m, chat, c));
   pane.replaceChildren(h("div", { class: "apanel" },
@@ -463,7 +468,7 @@ function renderAssistant(force) {
       h("div", { class: "seg", role: "group", "aria-label": "What Ask Starwell looks at" },
         h("button", { type: "button", "aria-pressed": String(chat.scope === "memo"), disabled: !activeMemo && !chat.attach?.memoId && !chat.memoId, title: !activeMemo ? "Open a memo to ask about it alone" : null, onclick: () => { chat.scope = "memo"; if (activeMemo) chat.memoId = activeMemo.id; renderAssistant(true); } }, "This memo"),
         h("button", { type: "button", "aria-pressed": String(chat.scope === "company"), onclick: () => { chat.scope = "company"; renderAssistant(true); } }, "Whole company")),
-      h("span", null, scopeMemo ? "Looking at: " + (scopeMemo.title || "this memo") : "Looking at every memo and finding for " + c.name)),
+      null),
     msgs, form));
   grow();
   if (msgsScroll != null && !force) msgs.scrollTop = msgsScroll; else msgs.scrollTop = msgs.scrollHeight;
@@ -483,9 +488,9 @@ function answerEl(m, chat, c) {
       claims.length ? h("ul", { class: "claims" }, claims.map((cl) => h("li", null, h("span", null, h("span", { class: "badge " + (CLAIM[cl.kind]?.[1] || "") }, CLAIM[cl.kind]?.[0] || str(cl.kind) || "Claim")), h("span", null, str(cl.text), " ", refs(cl.refs))))) : null,
       str(d.deeper) ? str(d.deeper).split(/\n\n+/).map((p) => h("p", { style: "margin-top:8px" }, p)) : null) : null,
     h("div", { class: "a-acts" },
-      S.can.write && d.finding_draft && str(d.finding_draft.title) ? h("button", { class: "btn sm", type: "button", disabled: m.saved, onclick: async () => { await saveDraftFinding(m, c.id); m.saved = true; renderAssistant(true); } }, svg(IC.diag), m.saved ? "Saved as draft finding" : "Save as draft finding") : null,
-      S.can.write && str(d.next_step) ? h("button", { class: "btn sm", type: "button", onclick: () => createTask({ title: str(d.next_step), companyId: c.id, memoId: m.memoId || null }) }, svg(IC.actions), "Create task") : null,
-      h("button", { class: "btn ghost sm", type: "button", onclick: async () => { const t = [["What this means", d.what_it_means], ["Why it matters", d.why_it_matters], ["What may be missing", d.what_may_be_missing], ["Next step", d.next_step]].filter(([, x]) => str(x)).map(([k, x]) => k + ": " + x).join("\n\n"); try { await navigator.clipboard.writeText(t); toast("Copied"); } catch { toast("Copy isn't available here."); } } }, svg(IC.copy), "Copy")));
+      S.can.write && d.finding_draft && str(d.finding_draft.title) ? h("button", { class: "btn sm", type: "button", disabled: m.saved, onclick: async () => { await saveDraftFinding(m, c.id); m.saved = true; renderAssistant(true); } }, svg(IC.diag), m.saved ? "Saved as finding" : "Save as finding") : null,
+      S.can.write && str(d.next_step) ? h("button", { class: "btn sm", type: "button", onclick: () => createTask({ title: str(d.next_step), companyId: c.id, memoId: m.memoId || null }) }, svg(IC.plus), "Task") : null,
+      h("button", { class: "icon-btn sm", type: "button", onclick: async () => { const t = [["What this means", d.what_it_means], ["Why it matters", d.why_it_matters], ["What may be missing", d.what_may_be_missing], ["Next step", d.next_step]].filter(([, x]) => str(x)).map(([k, x]) => k + ": " + x).join("\n\n"); try { await navigator.clipboard.writeText(t); toast("Copied"); } catch { toast("Copy isn't available here."); } }, "aria-label": "Copy answer", title: "Copy" }, svg(IC.copy))));
 }
 async function saveDraftFinding(m, cid) {
   const d = m.data.finding_draft;

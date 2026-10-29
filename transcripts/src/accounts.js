@@ -35,7 +35,7 @@ function viewSignIn(view) {
       h("div", { class: "brand" }, h("span", { class: "logo", "aria-hidden": "true" }, svg(IC.spark, 15)), h("b", null, "Starwell"), h("small", null, "SI")),
       h("section", { class: "si-card", "aria-labelledby": "si-h" },
         h("h1", { id: "si-h" }, "Who's signing in?"),
-        h("p", null, S.me?.name ? ["Signed in to Claude as ", h("b", { style: "color:var(--fg);font-weight:500" }, S.me.name), ". Pick your name once; it stays linked to this account."] : "Pick your name once; it stays linked to the Claude account you're using."),
+        h("p", null, S.me?.name ? ["Signed in to Claude as ", h("b", { style: "color:var(--fg);font-weight:500" }, S.me.name)] : "Pick your name once."),
         h("div", { class: "seats" }, names.map((name) => {
           const holder = holderOf(name);
           const taken = holder && holder !== S.uid;
@@ -44,7 +44,7 @@ function viewSignIn(view) {
             h("span", { style: "min-width:0" }, h("b", null, name), taken ? h("small", { id: "seat-" + name }, "Already signed in on " + (ps[holder]?.name || "another account")) : null),
             taken ? svg(IC.lock) : svg(IC.chevR));
         })), err),
-      h("p", { class: "si-foot" }, "Not on the list? Ask whoever shared this page to add you on the Team page. Not you? Sign out of Claude and back in with your own account.")));
+      h("p", { class: "si-foot" }, "Not on the list? Ask whoever shared this page to add you.")));
   };
   currentView.refresh = draw; draw();
 }
@@ -59,7 +59,7 @@ function viewTeam(view) {
     const names = [...new Set([...roster(), ...Object.values(S.team).map((t) => t.name)])];
     const add = h("input", { class: "inp", placeholder: "Teammate's name", "aria-label": "New teammate name", style: "max-width:240px" });
     view.replaceChildren(
-      pageHead("Team and access", "Everyone here signs in with their own Claude account. Every memo they upload, with its full transcript and notes, is shared with the whole team."),
+      pageHead("Team"),
       h("div", { class: "table team-t" },
         h("div", { class: "thead", role: "presentation" }, h("span", null, "Name"), h("span", { class: "c" }, "Claude account"), h("span", { class: "c r" }, "Memos"), h("span", { class: "c" }, "Last upload"), h("span", { class: "c" }, "Status"), h("span")),
         names.map((name) => {
@@ -79,8 +79,8 @@ function viewTeam(view) {
               canRemove ? menuItem("Remove from the team list", () => saveRoster(roster().filter((n) => n !== name)), { icon: IC.trash, danger: true }) : null]) : h("span"));
         })),
       S.can.review ? h("form", { class: "row", style: "margin-top:12px;flex-wrap:wrap", onsubmit: (e) => { e.preventDefault(); const n = str(add.value); if (!n || names.some((x) => x.toLowerCase() === n.toLowerCase())) return; saveRoster([...roster(), n]); } }, add, h("button", { class: "btn", type: "submit" }, svg(IC.plus), "Add teammate")) : null,
-      h("section", { class: "sec card" }, h("div", { class: "card-h" }, h("h2", null, "Giving a teammate access")),
-        h("div", { class: "card-b" }, h("ol", { class: "plain", style: "font-size:14px;line-height:22px" },
+      h("details", { class: "fold flat", style: "margin-top:20px" }, h("summary", null, h("span", null, "How to give a teammate access")),
+        h("div", { class: "fold-b" }, h("ol", { class: "plain", style: "font-size:14px;line-height:22px" },
           h("li", null, "Open the page's Share menu (top right of the page in Claude)."),
           h("li", null, "Invite them by email. Choose Editor if they should accept or reject findings; Contributor if they only upload and comment."),
           h("li", null, "They open the link, sign in to Claude with their own account, and pick their name.")),
@@ -100,7 +100,7 @@ function viewMine(view) {
     const ps = await people([S.uid]);
     if (!alive()) return;
     view.replaceChildren(
-      pageHead("My uploads", `Everything ${myName() || "you"} uploaded, across all companies. Your teammates see each of these in full.`, S.can.write && S.companies.length ? h("a", { class: "btn primary", href: "#new" }, svg(IC.plus), "New memo") : null),
+      pageHead("My uploads", null, S.can.write && S.companies.length ? h("a", { class: "btn primary", href: "#new" }, svg(IC.plus), "New memo") : null),
       mine.length ? memoTable(mine, ps, { company: true }) : emptyState(IC.upload, "You haven't uploaded a memo yet", "Memos you upload show up here, across every company.", S.can.write && S.companies.length ? h("a", { class: "btn primary", href: "#new" }, "Upload your first memo") : null));
   };
   currentView.refresh = draw; draw();
