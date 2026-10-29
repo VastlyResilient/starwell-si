@@ -52,10 +52,15 @@ const check = (ok, what) => { log(ok ? "PASS" : "FAIL", what); if (!ok) fails++;
   // ---- companies ----
   await page.fill("input[name=cname]", "Harbor Line Plumbing");
   await page.fill("input[name=cind]", "Plumbing");
-  await page.click(".pop button[type=submit]");
+  await page.click("#view button[type=submit]");
   await page.waitForFunction(() => document.querySelector(".page-h h1")?.textContent === "Harbor Line Plumbing");
   check(true, "company created and opened on its overview");
-  check((await page.getAttribute("#q", "placeholder")) === "Search or ask about Harbor Line Plumbing…", "search placeholder names the active company");
+  check((await page.textContent("#crumbs")) === "Harbor Line Plumbing", "header names the active company");
+  await page.keyboard.press("Control+k");
+  await page.waitForSelector("#palette:not([hidden]) #q");
+  check((await page.getAttribute("#q", "placeholder")) === "Search Harbor Line Plumbing…" && (await page.textContent("#results")).includes("Key numbers"), "Ctrl+K opens the command palette scoped to the company, with page shortcuts");
+  await page.keyboard.press("Escape");
+  check(await page.$eval("#palette", (e) => e.hidden), "Esc closes the palette");
   await shot(page, "02-overview-empty");
 
   // ---- new memo ----
@@ -84,10 +89,11 @@ const check = (ok, what) => { log(ok ? "PASS" : "FAIL", what); if (!ok) fails++;
 
   // ---- switch company mid-analysis: results must stay with Harbor Line ----
   await page.click(".switch-btn");
-  await page.fill("input[name=cname]", "Northside HVAC");
-  await page.click(".pop button[type=submit]");
+  await page.click(".pop-item:has-text('New company')");
+  await page.fill(".dlg input[name=cname]", "Northside HVAC");
+  await page.click(".dlg button[type=submit]");
   await page.waitForFunction(() => document.querySelector(".page-h h1")?.textContent === "Northside HVAC");
-  check(!(await page.textContent("#tabs")).includes("Owner discovery call"), "tabs only show the active company's memos");
+  check(!(await page.textContent("#side")).includes("Owner discovery call"), "the sidebar only lists the active company's memos");
   await page.waitForFunction(() => [...window.__store.entries()].some(([k, v]) => /^interviews\/[^/]+$/.test(k) && v.status === "ready"), null, { timeout: 60000 });
   const iso = await page.evaluate(() => { const e = [...window.__store.entries()]; const cos = Object.fromEntries(e.filter(([k]) => /^companies\//.test(k)).map(([k, v]) => [v.name, k.split("/")[1]])); const f = e.filter(([k]) => /^findings\//.test(k)).map(([, v]) => v.companyId); return { harbor: cos["Harbor Line Plumbing"], north: cos["Northside HVAC"], f }; });
   check(iso.f.length > 0 && iso.f.every((c) => c === iso.harbor), `findings saved to the memo's company even after switching (${iso.f.length} findings)`);
@@ -97,14 +103,18 @@ const check = (ok, what) => { log(ok ? "PASS" : "FAIL", what); if (!ok) fails++;
   await page.click(".switch-btn"); await page.click(".pop-item >> text=Harbor Line Plumbing");
   await page.waitForFunction(() => document.querySelector(".page-h h1")?.textContent === "Harbor Line Plumbing");
   await shot(page, "05-overview");
-  check((await page.$$(".band-card .brow")).length >= 2, "overview lists top priorities on the band card");
+  check((await page.$$(".prio-row")).length >= 2 && (await page.$$(".kpi")).length === 4, "overview shows four summary numbers and the top priorities");
   await page.click(".recent a");
   await page.waitForSelector(".viewbar");
   await page.waitForSelector(".turn");
-  check(await page.$eval('.vtabs button[aria-selected="true"]', (e) => e.textContent) === "Organized", "a finished memo opens on the Organized view");
+  check(await page.$eval('.vtabs button[aria-selected="true"]', (e) => e.textContent) === "Transcript" && await page.$eval('.tmode button[aria-pressed="true"]', (e) => e.textContent) === "Organized", "a finished memo opens on the organized transcript");
   const nNotes = (await page.$$(".turn .note, .osec .note")).length;
   check(nNotes >= 3, `AI notes appear on the organized transcript (${nNotes})`);
   await shot(page, "06-memo-organized");
+  await page.click("#askBtn"); await page.waitForSelector(".a-scope");
+  const scopeNow = await page.$eval('.a-scope button[aria-pressed="true"]', (e) => e.textContent);
+  check(scopeNow === "This memo", "Ask Starwell points at the open memo (" + scopeNow + ")");
+  await page.click("#askBtn");
   // speaker rename
   await page.click(".turn .who button.spk >> nth=0");
   await page.fill(".turn .who input", "Jordan (Starwell)"); await page.keyboard.press("Enter");
@@ -112,12 +122,12 @@ const check = (ok, what) => { log(ok ? "PASS" : "FAIL", what); if (!ok) fails++;
   check((await page.$$eval(".turn .who", (e) => e.filter((x) => x.textContent.includes("Jordan (Starwell)")).length)) > 1, "renaming a speaker updates every turn");
 
   // Original view: highlights + cues
-  await page.click('.vtabs button:has-text("Original")');
+  await page.click('.tmode button:has-text("Original")');
   await page.waitForSelector(".srow");
   check((await page.$$("mark.hl")).length >= 2, `note quotes are highlighted in the original wording (${(await page.$$("mark.hl")).length})`);
   await shot(page, "07-memo-original");
   // Summary
-  await page.click('.vtabs button:has-text("Summary")');
+  await page.click('.vtabs button:has-text("Brief")');
   check((await page.textContent("#view")).includes("Tone and delivery") && (await page.textContent("#view")).includes("not measurements"), "summary includes tone, labeled as interpretation");
   await shot(page, "08-memo-summary");
   // Findings
@@ -135,7 +145,7 @@ const check = (ok, what) => { log(ok ? "PASS" : "FAIL", what); if (!ok) fails++;
   // evidence link → original + flash
   await page.click(".dcard:has-text('Morning-rush') .evq .ev");
   await page.waitForSelector(".srow.flash");
-  check(await page.$eval('.vtabs button[aria-selected="true"]', (e) => e.textContent) === "Original", "clicking evidence opens the original passage and highlights it");
+  check(await page.$eval('.tmode button[aria-pressed="true"]', (e) => e.textContent) === "Original", "clicking evidence opens the original passage and highlights it");
 
   // ---- review + task from card ----
   await page.click('.vtabs button:has-text("Findings")');
@@ -150,7 +160,7 @@ const check = (ok, what) => { log(ok ? "PASS" : "FAIL", what); if (!ok) fails++;
   check(true, "comment posted on a finding");
 
   // ---- highlight → Explain ----
-  await page.click('.vtabs button:has-text("Organized")');
+  await page.click('.vtabs button:has-text("Transcript")');
   await page.waitForSelector(".turn .tx");
   await page.evaluate(() => { const el = [...document.querySelectorAll(".turn .tx")].find((x) => /miss/i.test(x.textContent)) || document.querySelector(".turn .tx"); const r = document.createRange(); r.selectNodeContents(el); const s = getSelection(); s.removeAllRanges(); s.addRange(r); });
   await page.waitForSelector("#selbar:not([hidden])");
@@ -183,8 +193,9 @@ const check = (ok, what) => { log(ok ? "PASS" : "FAIL", what); if (!ok) fails++;
   check(!(await page.$(".a-chip")), "returning keeps Harbor Line's conversation, without the stale attachment");
 
   // ---- search ----
+  await page.keyboard.press("Control+k");
   await page.fill("#q", "whiteboard");
-  await page.waitForSelector("#results:not([hidden]) .res");
+  await page.waitForSelector("#palette:not([hidden]) #results .grp:has-text('Passages')");
   const groups = await page.$$eval("#results .grp", (e) => e.map((x) => x.textContent));
   check(groups.includes("Passages") && groups.includes("Findings"), "search shows plain results by type: " + groups.join(", "));
   const promptsBefore = await page.evaluate(() => window.__prompts.length);
@@ -196,7 +207,7 @@ const check = (ok, what) => { log(ok ? "PASS" : "FAIL", what); if (!ok) fails++;
   check(cp.includes("Scope: all evidence for Harbor Line Plumbing") && !cp.includes("Northside"), "Ask Starwell from search uses company evidence only");
 
   // ---- diagnostics / metrics / actions ----
-  await page.click(".nav a:has-text('Diagnostics')");
+  await page.click(".nav a:has-text('Findings')");
   await page.waitForSelector(".queues");
   check((await page.textContent(".queues")).includes("Investigate next") && (await page.textContent(".queues")).includes("Ready to test"), "diagnostics split into two queues");
   await shot(page, "13-diagnostics");
@@ -206,7 +217,7 @@ const check = (ok, what) => { log(ok ? "PASS" : "FAIL", what); if (!ok) fails++;
   check((await page.$$(".mcard")).length >= 1 && kn.includes("Said in conversation") && kn.includes("Mentioned without a number") && !kn.includes("Not available"), "key numbers show as cards; figures with no value are listed separately, never as zero");
   check(await page.$eval(".mcard .mval", (e) => e.textContent) === "around 20 a week", "value and period read naturally (no 'calls · per week' duplication)");
   await shot(page, "14-metrics");
-  await page.click(".nav a:has-text('Actions')");
+  await page.click(".nav a:has-text('Tasks')");
   await page.waitForSelector(".task");
   const nTasks = (await page.$$(".task")).length;
   await page.click(".task input[type=checkbox] >> nth=0");
@@ -229,7 +240,7 @@ const check = (ok, what) => { log(ok ? "PASS" : "FAIL", what); if (!ok) fails++;
   await page.evaluate(() => { window.__sampleFail = null; });
   await page.click("button:has-text('Resume analysis')");
   await page.waitForFunction(() => [...window.__store.entries()].every(([k, v]) => !/^interviews\/[^/]+$/.test(k) || v.status === "ready"), null, { timeout: 30000 });
-  await page.waitForSelector(".vtabs button[aria-selected='true']:has-text('Organized')", { timeout: 30000 });
+  await page.waitForSelector(".tmode button[aria-pressed='true']:has-text('Organized')", { timeout: 30000 });
   const reviewed = await page.evaluate(() => [...window.__store.entries()].filter(([k]) => k.startsWith("findings/")).map(([, v]) => v.title));
   check(reviewed.filter((t) => t === "Morning-rush calls go unanswered").length === 2, "re-analysis kept the reviewed finding and added a fresh draft beside it (no silent overwrite)");
 
@@ -266,7 +277,7 @@ const check = (ok, what) => { log(ok ? "PASS" : "FAIL", what); if (!ok) fails++;
   await bob.click(".lrow:has-text(\"Dan's ride-along\")");
   await bob.waitForSelector(".meta-line");
   check((await bob.textContent(".meta-line")).includes("by Dan"), "Bobby sees the memo labeled as Dan's");
-  await bob.click('.vtabs button:has-text("Original")'); await bob.waitForSelector(".srow");
+  await bob.click('.vtabs button:has-text("Transcript")'); await bob.click('.tmode button:has-text("Original")'); await bob.waitForSelector(".srow");
   check((await bob.textContent("#view")).includes("The final line of Dan's full note is kept word for word."), "Bobby can read Dan's note in full");
   await shot(bob, "17-dan-memo-for-bobby");
   await bob.context().close();
